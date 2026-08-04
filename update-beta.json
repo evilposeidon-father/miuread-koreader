@@ -1,0 +1,17 @@
+{
+  "version": "4.1.0-beta.2",
+  "name": "\u89c5\u9605 \u00b7 \u5fae\u4fe1\u8bfb\u4e66\u52a9\u624b 4.1.0-beta.2 \u5185\u6d4b\u7248",
+  "channel": "beta",
+  "package_type": "full",
+  "package_url": "https://github.com/miumiupy98-art/miuread-koreader/releases/download/v4.1.0-beta.2/miuread-v4.1.0-beta.2-full.zip",
+  "package_urls": [
+    "https://github.com/miumiupy98-art/miuread-koreader/releases/download/v4.1.0-beta.2/miuread-v4.1.0-beta.2-full.zip",
+    "https://ghfast.top/https://github.com/miumiupy98-art/miuread-koreader/releases/download/v4.1.0-beta.2/miuread-v4.1.0-beta.2-full.zip",
+    "https://gh-proxy.com/https://github.com/miumiupy98-art/miuread-koreader/releases/download/v4.1.0-beta.2/miuread-v4.1.0-beta.2-full.zip",
+    "https://ghproxy.net/https://github.com/miumiupy98-art/miuread-koreader/releases/download/v4.1.0-beta.2/miuread-v4.1.0-beta.2-full.zip"
+  ],
+  "size": 468464,
+  "sha256": "159a62872549e8270ec60a466886f306e0a2a88f4a0961cb3461c036f0676e07",
+  "summary": "\u4e0e 4.1.0-beta.1 \u76f8\u6bd4:\n- \u7528\u4e8e\u9a8c\u8bc1\u5185\u6d4b\u7248\u53d1\u5e03\u548c\u5728\u7ebf\u66f4\u65b0\u6d41\u7a0b, \u65e0\u529f\u80fd\u53d8\u5316",
+  "notes": "\u4e0e 4.1.0-beta.1 \u76f8\u6bd4:\n- \u7528\u4e8e\u9a8c\u8bc1\u5185\u6d4b\u7248\u53d1\u5e03\u548c\u5728\u7ebf\u66f4\u65b0\u6d41\u7a0b, \u65e0\u529f\u80fd\u53d8\u5316"
+}
