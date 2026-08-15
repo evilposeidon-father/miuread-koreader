@@ -257,70 +257,13 @@ local function context_from(state, fallback)
     }
 end
 
-local function map_position(chapters, ratio, fallback)
-    chapters = type(chapters) == "table" and chapters or {}
-    ratio = U.clamp(tonumber(ratio) or 0, 0, 1)
-    fallback = fallback or {}
-    if #chapters == 0 then
-        return {
-            progress = U.clamp(ratio * 100, 0, 100),
-            chapter_uid = fallback.chapter_uid or 0,
-            chapter_index = tonumber(fallback.chapter_index or 0) or 0,
-            offset = tonumber(fallback.offset or 0) or 0,
-            summary = fallback.summary or "",
-        }
-    end
-    local total = 0
-    for _, ch in ipairs(chapters) do total = total + math.max(1, tonumber(ch.word_count or 0) or 0) end
-    local target, acc = ratio * total, 0
-    for index, ch in ipairs(chapters) do
-        local words = math.max(1, tonumber(ch.word_count or 0) or 0)
-        if target <= acc + words or index == #chapters then
-            return {
-                progress = U.clamp(ratio * 100, 0, 100),
-                chapter_uid = ch.uid or 0,
-                chapter_index = tonumber(ch.index) or index,
-                offset = math.max(0, math.floor(target - acc)),
-                summary = ch.title or fallback.summary or "",
-            }
-        end
-        acc = acc + words
-    end
-end
-
-local function chapter_uid(chapter)
-    return chapter and (chapter.chapterUid or chapter.uid or chapter.chapter_uid)
-end
-
-local function chapter_index(chapter, fallback)
-    return tonumber(chapter and (chapter.chapterIdx or chapter.index or chapter.chapter_index or chapter.chapter_idx))
-        or tonumber(fallback or 0) or 0
-end
-
-local function chapter_words(chapter)
-    return math.max(1, tonumber(chapter and (chapter.wordCount or chapter.word_count) or 0) or 0)
-end
-
-local function readable_local_chapter_count(chapters)
-    local count = 0
-    for _, chapter in ipairs(type(chapters) == "table" and chapters or {}) do
-        if type(chapter) == "table" and chapter.structural ~= true
-            and tostring(chapter_uid(chapter) or "") ~= "" then
-            count = count + 1
-        end
-    end
-    return count
-end
-
-local function local_chapter_by_uid(chapters, wanted_uid)
-    wanted_uid = tostring(wanted_uid or "")
-    if wanted_uid == "" then return nil end
-    for index, chapter in ipairs(type(chapters) == "table" and chapters or {}) do
-        if type(chapter) == "table" and tostring(chapter_uid(chapter) or "") == wanted_uid then
-            return chapter, index
-        end
-    end
-end
+local ProgressPosition = require("miuread.progress_position")
+local map_position = ProgressPosition.map_position
+local chapter_uid = ProgressPosition.chapter_uid
+local chapter_index = ProgressPosition.chapter_index
+local chapter_words = ProgressPosition.chapter_words
+local readable_local_chapter_count = ProgressPosition.readable_local_chapter_count
+local local_chapter_by_uid = ProgressPosition.local_chapter_by_uid
 
 local function catalog_progress_from_remote(remote, chapters)
     if type(remote)~="table" then return remote end
@@ -554,19 +497,10 @@ function Sync:position(record, ratio, chapters, full_catalog)
     if type(full_map) ~= "table" or #full_map == 0 then
         full_map = select(1, self:_progress_catalog(record))
     end
-    local mapped,map_error=BookIntegrity.position_from_maps(local_map,full_map,ratio,{
+    return ProgressPosition.resolve(local_map, full_map, ratio, {
         chapter_uid = record.record and record.record.chapter_uid or 0,
         summary = record.book.title,
     })
-    if mapped then return mapped end
-    local fallback=map_position(local_map,ratio,{
-        chapter_uid=record.record and record.record.chapter_uid or 0,
-        summary=record.book.title,
-    })
-    fallback.safe=BookIntegrity.maps_equivalent(local_map,full_map)
-    fallback.mapping_error=map_error
-    fallback.source=fallback.safe and "equivalent_local_map" or "unsafe_local_ratio"
-    return fallback
 end
 
 function Sync:_decorate_legacy_context(context, record)

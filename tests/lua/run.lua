@@ -22,6 +22,7 @@ local suites = {
     "test_ui_scale",
     "test_lazy",
     "test_progress_decision",
+    "test_progress_position",
     "test_session_state",
     "test_store_downloads",
     "test_store_auth_sessions",

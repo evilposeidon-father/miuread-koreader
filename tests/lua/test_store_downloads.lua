@@ -1,7 +1,13 @@
 local B = require("tests.lua.bootstrap")
 
--- Fake DownloadDatabase before store_downloads captures its require.
 local fake_database = {}
+
+-- Fake DownloadDatabase before store_downloads captures its require. Other
+-- suites (progress_position -> book_integrity) may have loaded the real
+-- module, so clear the cache for this isolated reader test.
+local saved_download_database = package.loaded["miuread.download_database"]
+package.loaded["miuread.download_database"] = nil
+package.loaded["miuread.store_downloads"] = nil
 package.preload["miuread.download_database"] = function() return fake_database end
 
 local StoreDownloads = require("miuread.store_downloads")
@@ -80,6 +86,7 @@ end
 
 function T.test_z_restore_download_database()
     package.preload["miuread.download_database"] = nil
+    package.loaded["miuread.download_database"] = saved_download_database
 end
 
 return T
