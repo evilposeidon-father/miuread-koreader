@@ -39,6 +39,8 @@ function T.test_load_main_and_controllers()
     test_method(plugin, "show_shelf")
     test_method(plugin, "_home_preferences")
     test_method(plugin, "home_mode_menu")
+    test_method(plugin, "home_customization_menu")
+    test_method(plugin, "_show_miuread_menu")
 end
 
 function T.test_load_lazy_ui_modules()
