@@ -5,6 +5,7 @@
 ## Unreleased
 
 - 架构 新增 `miuread.download_coordinator` 深模块：接管下载状态读写/节流、active 状态合并、状态文案、payload 形状、队列去重与下一任务启动判定；`plugin_download` 改为薄委托，新增 8 个纯逻辑单元测试（可注入时钟与假 store）。
+- 架构 启动加载基线 + Lazy 化：新增 `tests/lua/bench_startup.lua` 无头基准（stub KOReader 后多次加载 main 并输出每模块首次加载耗时）；按数据把 `epub`、`local_annotation_database`、`local_library`、`reader_toolbar`、`home_view`、`action_sheet`、`home_quick_panel`、`book_integrity`、`epub_installer`、`download_database` 等低频模块改为 Lazy 代理，无头基线 285ms → 254ms（约 -11%），启动模块数 154 → 147。
 - 架构 新增 `miuread.progress_decision` 深模块：下沉进度同步纯决策（章节/偏移/百分比匹配、上传失败分类、本机-云端对齐判定）；`plugin_sync` 改为薄委托，新增 4 组纯逻辑单元测试。
 - 架构 新增 `miuread.session_state`：统一接管 5 个 `_G.__MIUREAD_*` 会话表的创建/字段归一与访问器，main.lua 与拆分控制器不再直接 `rawget(_G, ...)`；新增 session_state 单元测试。
 - 架构 继续拆分 `main.lua`：新增 `miuread.plugin_search_mp`、`miuread.plugin_repair`、`miuread.plugin_preferences`、`miuread.plugin_thought_popup`、`miuread.plugin_device`、`miuread.plugin_book`（书籍菜单/详情）、`miuread.plugin_events`（KOReader 事件入口），均沿用 `install(Plugin)` 模式；`main.lua` 从约 14430 行降至约 11700 行。
