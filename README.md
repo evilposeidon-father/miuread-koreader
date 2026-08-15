@@ -53,6 +53,8 @@ MiuRead（觅阅 · 微信读书助手）是面向 KOReader 的非官方微信�
 
 本仓库主要开发分支为 `feature/local-book-annotations`；正式版通过 `vX.Y.Z` tag 发布，tag、`miuread.koplugin/miuread/config.lua` 与 `miuread.koplugin/_meta.lua` 的版本保持一致。
 
+完整的向上游贡献改动清单见 [`docs/UPSTREAM-CONTRIBUTION.md`](docs/UPSTREAM-CONTRIBUTION.md)。
+
 本地测试：
 
 ```bash
