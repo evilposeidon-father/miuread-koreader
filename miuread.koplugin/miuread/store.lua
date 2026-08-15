@@ -10,9 +10,13 @@ local Store={}; Store.__index=Store
 local StoreDownloads=require("miuread.store_downloads")
 local StoreAuth=require("miuread.store_auth")
 local StoreSessions=require("miuread.store_sessions")
+local StoreLibrary=require("miuread.store_library")
+local StorePending=require("miuread.store_pending")
 for name,func in pairs(StoreDownloads) do Store[name]=func end
 for name,func in pairs(StoreAuth) do if type(func)=="function" then Store[name]=func end end
 for name,func in pairs(StoreSessions) do if type(func)=="function" then Store[name]=func end end
+for name,func in pairs(StoreLibrary) do if type(func)=="function" then Store[name]=func end end
+for name,func in pairs(StorePending) do if type(func)=="function" then Store[name]=func end end
 local defaults=require("miuread.store_defaults")
 local function settings_file_valid(path)
     if not path or lfs.attributes(path,"mode")~="file" then return false,"missing" end
@@ -1335,171 +1339,6 @@ function Store:mp_root() U.mkdir(self.mp_dir); return self.mp_dir end
 function Store:book_dir(id) local p=self:book_cache_path(id); U.mkdir(p); return p end
 function Store:epub_path(filename) local p=self:epub_root().."/"..tostring(filename); U.mkdir(self:epub_root()); return p end
 
-local function basename(path) return tostring(path or ""):match("([^/]+)$") end
-function Store:library() return self:get("library",{}) end
-function Store:book(id) return self:library()[tostring(id)] end
-function Store:save_book(id,patch)
-    local all=self:library(); local key=tostring(id); all[key]=U.merge(all[key] or {book_id=key,variants={},chapters={}},patch or {}); self:set("library",all); return all[key]
-end
-function Store:clear_book_access(id)
-    local all=self:library(); local key=tostring(id)
-    if type(all[key])=="table" and all[key].access~=nil then
-        all[key].access=nil
-        self:set("library",all)
-    end
-    return all[key]
-end
-function Store:save_variant(id,kind,record)
-    local b=self:book(id) or {book_id=tostring(id),variants={},chapters={}}; b.variants=b.variants or {}; b.variants[kind]=U.copy(record); return self:save_book(id,b)
-end
-function Store:save_chapter_variant(id,uid,kind,record)
-    local b=self:book(id) or {book_id=tostring(id),variants={},chapters={}}; b.chapters=b.chapters or {}; local key=tostring(uid); b.chapters[key]=b.chapters[key] or {}; b.chapters[key][kind]=U.copy(record); return self:save_book(id,b)
-end
-function Store:variant(id,kind) local b=self:book(id); return b and b.variants and b.variants[kind] end
-function Store:chapter_variant(id,uid,kind) local b=self:book(id); return b and b.chapters and b.chapters[tostring(uid)] and b.chapters[tostring(uid)][kind] end
-local function add_unique_path(out,seen,path)
-    path=tostring(path or "")
-    if path~="" and not seen[path] then seen[path]=true; out[#out+1]=path end
-end
-function Store:partial_cache_paths(id)
-    local root=self:book_cache_path(id)
-    local out={}
-    if lfs.attributes(root,"mode")~="directory" then return out end
-    local ok,iter,state=pcall(lfs.dir,root)
-    if not ok or type(iter)~="function" then return out end
-    for name in iter,state do
-        if name~="." and name~=".." and tostring(name):match("^%.miuread%-partial%-") then out[#out+1]=root.."/"..name end
-    end
-    table.sort(out)
-    return out
-end
-function Store:book_has_partial_cache(id) return #self:partial_cache_paths(id)>0 end
-function Store:variant_paths(id,kind)
-    local r=self:variant(id,kind)
-    return r and r.file and {r.file} or {}
-end
-function Store:chapter_paths(id,uid)
-    local b=self:book(id); local row=b and b.chapters and b.chapters[tostring(uid)]
-    local out,seen={},{}
-    for _,r in pairs(row or {}) do add_unique_path(out,seen,r and r.file) end
-    return out
-end
-function Store:book_paths(id,include_cache)
-    local b=self:book(id)
-    local out,seen={},{}
-    if b then
-        for _,r in pairs(b.variants or {}) do add_unique_path(out,seen,r and r.file) end
-        for _,row in pairs(b.chapters or {}) do for _,r in pairs(row or {}) do add_unique_path(out,seen,r and r.file) end end
-    end
-    if include_cache~=false then add_unique_path(out,seen,self:book_cache_path(id)) end
-    return out
-end
-function Store:all_download_paths(include_covers)
-    local out,seen={},{}
-    for id,_ in pairs(self:library()) do for _,path in ipairs(self:book_paths(id,true)) do add_unique_path(out,seen,path) end end
-    add_unique_path(out,seen,self.cache_books_dir)
-    if include_covers then add_unique_path(out,seen,self.covers_dir) end
-    return out
-end
-local function book_has_records(book)
-    if type(book)~="table" then return false end
-    if next(book.variants or {}) then return true end
-    for _,row in pairs(book.chapters or {}) do if next(row or {}) then return true end end
-    return false
-end
-function Store:forget_variant(id,kind)
-    local all=self:library(); local key=tostring(id); local b=all[key]; if not b then return end
-    if b.variants then b.variants[kind]=nil end
-    if not book_has_records(b) and not self:book_has_partial_cache(id) then all[key]=nil end
-    self:set("library",all)
-end
-function Store:forget_chapter(id,uid,kind)
-    local all=self:library(); local key=tostring(id); local b=all[key]; local row=b and b.chapters and b.chapters[tostring(uid)]
-    if row then row[kind]=nil; if next(row)==nil then b.chapters[tostring(uid)]=nil end end
-    if b and not book_has_records(b) and not self:book_has_partial_cache(id) then all[key]=nil end
-    self:set("library",all)
-end
-function Store:forget_chapter_all(id,uid)
-    local all=self:library(); local key=tostring(id); local b=all[key]
-    if b and b.chapters then b.chapters[tostring(uid)]=nil end
-    if b and not book_has_records(b) and not self:book_has_partial_cache(id) then all[key]=nil end
-    self:set("library",all)
-end
-function Store:forget_book(id) local all=self:library(); all[tostring(id)]=nil; self:set("library",all) end
-function Store:forget_book_local_state(id)
-    local key=tostring(id or "")
-    if key=="" then return false end
-    local all=self:library(); all[key]=nil; self:set("library",all)
-    local sessions=self:get("sessions",{}); sessions[key]=nil; self:set("sessions",sessions)
-    local covers=self:get("cover_index",{}); covers[key]=nil; self:set("cover_index",covers)
-
-    local queue_out={}
-    for _,job in ipairs(self:download_queue()) do
-        local job_id=tostring((job.book and (job.book.bookId or job.book.book_id)) or job.book_id or "")
-        if job_id~=key then queue_out[#queue_out+1]=job end
-    end
-    self:save_download_queue(queue_out)
-
-    local pending_out={}
-    for _,row in ipairs(self:pending_installs()) do
-        if tostring(row.book_id or "")~=key then pending_out[#pending_out+1]=row end
-    end
-    self:save_pending_installs(pending_out)
-
-    local repair=self:get("book_repair_state",{}); repair[key]=nil; self:set("book_repair_state",repair)
-    local history_out={}
-    for _,row in ipairs(self:get("book_repair_history",{})) do
-        if tostring(row.book_id or "")~=key then history_out[#history_out+1]=row end
-    end
-    self:set("book_repair_history",history_out)
-
-    local shelf=self:shelf_cache()
-    local shelf_changed=false
-    for _,group in ipairs({shelf.books or {},shelf.mp or {}}) do
-        for _,row in ipairs(group) do
-            if tostring(row.bookId or row.book_id or "")==key and row.cover_path~=nil then
-                row.cover_path=nil; shelf_changed=true
-            end
-        end
-    end
-    if shelf_changed then self:save_shelf_cache(shelf) end
-
-    local state=self:download_state()
-    if tostring(state.book_id or (state.book and (state.book.bookId or state.book.book_id)) or "")==key then
-        self:clear_download_state()
-    end
-    return true
-end
-function Store:forget_all_books() self:set("library",{}) end
-function Store:prune_missing_files()
-    local all=self:library(); local changed=false
-    for id,b in pairs(all) do
-        for kind,r in pairs(b.variants or {}) do if not (r and r.file and U.file_exists(r.file)) then b.variants[kind]=nil; changed=true end end
-        for uid,row in pairs(b.chapters or {}) do
-            for kind,r in pairs(row or {}) do if not (r and r.file and U.file_exists(r.file)) then row[kind]=nil; changed=true end end
-            if next(row or {})==nil then b.chapters[uid]=nil; changed=true end
-        end
-        if not book_has_records(b) and not self:book_has_partial_cache(id) then all[id]=nil; changed=true end
-    end
-    if changed then self:set("library",all) end
-    return changed
-end
-function Store:delete_variant(id,kind)
-    for _,path in ipairs(self:variant_paths(id,kind)) do U.remove_tree(path) end
-    self:forget_variant(id,kind)
-end
-function Store:delete_chapter(id,uid,kind)
-    local r=self:chapter_variant(id,uid,kind); if r and r.file then U.remove_tree(r.file) end
-    self:forget_chapter(id,uid,kind)
-end
-function Store:delete_book(id)
-    for _,path in ipairs(self:book_paths(id,true)) do U.remove_tree(path) end
-    self:forget_book(id)
-end
-function Store:all_books()
-    local o={}; for id,b in pairs(self:library()) do local x=U.copy(b); x.book_id=x.book_id or id; o[#o+1]=x end
-    table.sort(o,function(a,b) return tonumber(a.updated_at or a.downloaded_at or 0)>tonumber(b.updated_at or b.downloaded_at or 0) end); return o
-end
 local function normalize_path(path)
     local value=tostring(path or ""):gsub("\\","/"):gsub("/+","/")
     value=value:gsub("/%./","/")
@@ -1908,60 +1747,6 @@ function Store:save_cover_guard(v) self:set("cover_guard",U.merge(defaults.cover
 function Store:cover_path(id) return self.covers_dir.."/"..U.id_name(id)..".img" end
 function Store:update_state() return self:get("update_state",{}) end
 function Store:save_update_state(v) self:set("update_state",v or {}) end
-function Store:pending_installs() return self:get("pending_installs",{}) end
-function Store:save_pending_installs(rows) self:set("pending_installs",type(rows)=="table" and rows or {}) end
-function Store:add_pending_install(book_id,kind,chapter_uid,record)
-    local rows=self:pending_installs()
-    local key=table.concat({tostring(book_id or ""),tostring(chapter_uid or "full"),tostring(kind or "")},":")
-    local item={key=key,book_id=tostring(book_id or ""),kind=tostring(kind or ""),
-        chapter_uid=chapter_uid and tostring(chapter_uid) or nil,file=record and record.file,
-        pending_file=record and record.pending_file,created_at=os.time()}
-    local replaced=false
-    for index,row in ipairs(rows) do
-        if tostring(row.key or "")==key then rows[index]=item; replaced=true; break end
-    end
-    if not replaced then rows[#rows+1]=item end
-    self:save_pending_installs(rows)
-    return item
-end
-function Store:remove_pending_install(book_id,kind,chapter_uid)
-    local rows,out=self:pending_installs(),{}
-    local key=table.concat({tostring(book_id or ""),tostring(chapter_uid or "full"),tostring(kind or "")},":")
-    local changed=false
-    for _,row in ipairs(rows) do
-        if tostring(row.key or "")==key then changed=true else out[#out+1]=row end
-    end
-    if changed then self:save_pending_installs(out) end
-    return changed
-end
-function Store:prune_pending_installs()
-    local rows,out=self:pending_installs(),{}
-    local changed=false
-    for _,row in ipairs(rows) do
-        if row.pending_file and U.file_exists(row.pending_file) then out[#out+1]=row else changed=true end
-    end
-    if changed then self:save_pending_installs(out) end
-    return out
-end
-function Store:last_cleanup_result() return self:get("last_cleanup_result",{}) end
-function Store:save_cleanup_result(result) self:set("last_cleanup_result",type(result)=="table" and result or {}) end
-function Store:is_read_report_consumed(stamp)
-    stamp=tostring(stamp or "")
-    if stamp=="" then return false end
-    local rows=self:get("read_report_consumed",{})
-    return rows[stamp]~=nil
-end
-function Store:mark_read_report_consumed(stamp)
-    stamp=tostring(stamp or "")
-    if stamp=="" then return end
-    local rows=self:get("read_report_consumed",{})
-    rows[stamp]=os.time()
-    local ordered={}
-    for key,at in pairs(rows) do ordered[#ordered+1]={key=key,at=tonumber(at) or 0} end
-    table.sort(ordered,function(a,b) return a.at>b.at end)
-    for index=#ordered,21,-1 do rows[ordered[index].key]=nil end
-    self:set("read_report_consumed",rows)
-end
 function Store:flush()
     local previous_path=self.settings_path..".previous"
     if not self.isolated then

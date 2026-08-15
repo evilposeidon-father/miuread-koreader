@@ -6,6 +6,7 @@
 
 - 架构 store.lua 分层第一批：抽出 `miuread/store_defaults`（持久化默认值单一来源）与 `miuread/store_downloads`（下载状态/队列 reader，8 个方法），Store 保留门面并在加载时合并；新增 5 个纯逻辑单测与结构守卫。
 - 架构 store.lua 分层第二批：新增 `miuread/store_auth`（登录态/登录会话/健康度，8 方法）与 `miuread/store_sessions`（会话读写/失效/清空，6 方法 + 2 个共享失效 helper），Store 门面合并；新增 6 个纯逻辑单测；store.lua 约 2111 → 1998 行。
+- 架构 store.lua 分层第三批：新增 `miuread/store_library`（书籍/变体/路径/遗忘/删除/全量列表，约 25 方法）与 `miuread/store_pending`（待安装/清理结果/阅读上报记录，约 9 方法），Store 门面合并；新增 6 个纯逻辑单测；store.lua 约 1998 → 1783 行。
 - 架构 新增 `miuread.download_coordinator` 深模块：接管下载状态读写/节流、active 状态合并、状态文案、payload 形状、队列去重与下一任务启动判定；`plugin_download` 改为薄委托，新增 8 个纯逻辑单元测试（可注入时钟与假 store）。
 - 架构 启动加载基线 + Lazy 化：新增 `tests/lua/bench_startup.lua` 无头基准（stub KOReader 后多次加载 main 并输出每模块首次加载耗时）；按数据把 `epub`、`local_annotation_database`、`local_library`、`reader_toolbar`、`home_view`、`action_sheet`、`home_quick_panel`、`book_integrity`、`epub_installer`、`download_database` 等低频模块改为 Lazy 代理，无头基线 285ms → 254ms（约 -11%），启动模块数 154 → 147。
 - 架构 新增 `miuread.progress_decision` 深模块：下沉进度同步纯决策（章节/偏移/百分比匹配、上传失败分类、本机-云端对齐判定）；`plugin_sync` 改为薄委托，新增 4 组纯逻辑单元测试。

@@ -222,13 +222,22 @@ class MainLuaStructureTests(unittest.TestCase):
         downloads = read_text("miuread.koplugin/miuread/store_downloads.lua")
         auth = read_text("miuread.koplugin/miuread/store_auth.lua")
         sessions = read_text("miuread.koplugin/miuread/store_sessions.lua")
+        library = read_text("miuread.koplugin/miuread/store_library.lua")
+        pending = read_text("miuread.koplugin/miuread/store_pending.lua")
         defaults = read_text("miuread.koplugin/miuread/store_defaults.lua")
-        self.assertIn('local StoreDownloads=require("miuread.store_downloads")', store)
-        self.assertIn('local StoreAuth=require("miuread.store_auth")', store)
-        self.assertIn('local StoreSessions=require("miuread.store_sessions")', store)
+        for var, module in [
+            ("StoreDownloads", "store_downloads"),
+            ("StoreAuth", "store_auth"),
+            ("StoreSessions", "store_sessions"),
+            ("StoreLibrary", "store_library"),
+            ("StorePending", "store_pending"),
+        ]:
+            self.assertIn(f'local {var}=require("miuread.{module}")', store)
         self.assertNotIn("function Store:download_state(", store)
         self.assertNotIn("function Store:save_session(", store)
         self.assertNotIn("function Store:auth()", store)
+        self.assertNotIn("function Store:save_book(", store)
+        self.assertNotIn("function Store:add_pending_install(", store)
         self.assertNotIn("local defaults={", store)
         self.assertIn("local defaults={", defaults)
         for method in ["download_state", "save_download_state", "download_queue", "enqueue_download", "dequeue_download"]:
@@ -237,6 +246,10 @@ class MainLuaStructureTests(unittest.TestCase):
             self.assertIn(f"function StoreAuth:{method}(", auth)
         for method in ["session", "save_session", "clear_session", "invalidate_book_sync_context", "clear_login_bound_sessions"]:
             self.assertIn(f"function StoreSessions:{method}(", sessions)
+        for method in ["library", "save_book", "save_variant", "all_books", "delete_book"]:
+            self.assertIn(f"function StoreLibrary:{method}(", library)
+        for method in ["pending_installs", "add_pending_install", "prune_pending_installs", "mark_read_report_consumed"]:
+            self.assertIn(f"function StorePending:{method}(", pending)
 
     def test_home_order_mirrors_stay_in_sync(self):
         main = read_text("miuread.koplugin/main.lua")
