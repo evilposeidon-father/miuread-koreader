@@ -7,26 +7,12 @@ local DownloadDatabase=require("miuread.download_database")
 local U=require("miuread.util")
 local logger=require("logger")
 local Store={}; Store.__index=Store
+local StoreDownloads=require("miuread.store_downloads")
+for name,func in pairs(StoreDownloads) do Store[name]=func end
 local function generate_login_session_id()
     return tostring(os.time()).."-"..tostring(math.random(100000,999999))
 end
-local defaults={
- schema=Config.SCHEMA,
- auth={login_session_id="",api_key="",cookies={},wr_ticket="",wr_wrpa="",ticket_updated_at=0,
-     account={name="",vid="",logged_at=0},
-     health={state="unknown",last_checked_at=0,last_ok_at=0,last_error_at=0,
-         last_error_code="",last_error_message="",last_error_channel="",notice_pending=false,
-         channels={
-             shelf={state="unknown",checked_at=0,error="",code="",failures=0,retry_at=0},
-             progress={state="unknown",checked_at=0,error="",code="",failures=0,retry_at=0},
-             download={state="unknown",checked_at=0,error="",code="",failures=0,retry_at=0},
-             annotations={state="unknown",checked_at=0,error="",code="",failures=0,retry_at=0},
-             read_report={state="unknown",checked_at=0,error="",code="",failures=0,retry_at=0},
-         }}},
- preferences={images=true,mp_images=false,shelf_covers=true,download_keep_awake=true,download_notice_enabled=false,download_complete_notice=true,download_reader_warning=true,download_reader_policy="ask",download_dir="",shelf_section="account",account_shelf_kind="books",home_ui={enabled=false,layout_version=23,layout_style="desk",display_size="standard",ui_font_mode="default",ui_font_face="",local_root="",local_roots={},local_browse_version=2,local_library_mode="auto",local_auto_update=true,performance_defaults_version=1,auto_scan=true,local_check_on_open=true,page_by_section={},source_order={"account","generated","local","mp"},action_items={refresh=true,search=true,downloads=true,sync=true,sleep=true,miuread_settings=true,all_books=false,history=false,file_manager=false,screenshot=false},action_order={"refresh","search","downloads","sync","sleep","miuread_settings","all_books","history","file_manager","screenshot"},action_layout_version=3,panel_items={wifi=true,bluetooth=true,rotate=true,screenshot=true,full_refresh=true,koreader_settings=true,return_koreader=true,quit=true,sync=true,miuread_settings=false,downloads=false,restart=false,sleep=false},panel_order={"wifi","bluetooth","rotate","screenshot","full_refresh","koreader_settings","return_koreader","quit","sync","miuread_settings","downloads","restart","sleep"},panel_layout_version=3,more_expanded=false,network_metadata_defaults_version=2,network_metadata_user_set=false,network_metadata=true},reader_ui={enabled=true,plugin_mode_enabled=false,show_title=false,show_status=false,show_recent=false,recent_actions={},edge_guard_enabled=true,edge_guard_percent=10,quick_layout_version=11,quick_items={toc=true,progress=true,search=true,back=true,font=true,spacing=true,page=true,comments=true,bookmark=true,highlight=true,thought=true,sync=true},quick_order={"toc","progress","search","back","font","spacing","page","comments","bookmark","highlight","thought","sync"}},notices={reader_download=true,low_battery=true,low_storage=true,full_refresh=true,lockscreen=true,library_scan=true,repair_while_reading=true,mode_switch=true,mode_environment=true},mode_intro={pending_mode="plugin",pending_reason="first_install",last_confirmed_mode="",confirmed_at=0},memory_mode={enabled=false,previous_known=false,previous_ratio=false},performance_mode={enabled=false,auto_detect=true,last_prompt_at=0,reminders_disabled=false},time_display={mode="device",zone="Asia/Shanghai",offset_minutes=480},thoughts={enabled=true,font="standard",font_face="",follow_body_font=false,width_ratio=0.90,height_ratio=0.55,display_mode="native_compact_rounded"},annotation_sync={enabled=false,review_visibility="private",highlight_style=1,highlight_color=0},repair={auto_check=true},update={manifest=Config.UPDATE_MANIFEST,auto_check=true,interval=Config.AUTO_UPDATE_INTERVAL,last_attempt_at=0,last_success_at=0,last_prompted_version="",restart_mode="ask"},sync={time_enabled=false,progress_enabled=true,success_notice_enabled=true,manual_only=false,auto_upload=false,pull_on_open=true,check_resume=false,require_verified=false,interval=Config.READ_INTERVAL,idle_timeout=Config.IDLE_TIMEOUT,threshold=Config.REMOTE_THRESHOLD,resume_after=300}},
- library={},sessions={},shelf_cache={books={},mp={},updated_at=0},cover_index={},cover_guard={active=false,started_at=0,stage="",version=""},update_state={},download_queue={},
- pending_installs={},last_cleanup_result={},read_report_consumed={},recent_reads={version=1,items={}},
-}
+local defaults=require("miuread.store_defaults")
 local function invalidate_report_contexts_table(sessions)
     sessions=type(sessions)=="table" and sessions or {}
     local changed=0
@@ -2035,63 +2021,6 @@ function Store:save_cover_guard(v) self:set("cover_guard",U.merge(defaults.cover
 function Store:cover_path(id) return self.covers_dir.."/"..U.id_name(id)..".img" end
 function Store:update_state() return self:get("update_state",{}) end
 function Store:save_update_state(v) self:set("update_state",v or {}) end
-function Store:download_state()
-    local value=DownloadDatabase.get_download_state(self)
-    if type(value)=="table" and next(value)~=nil then return value end
-    local legacy_path=tostring(self.legacy_download_state_path or "")
-    local raw=legacy_path~="" and U.read_file(legacy_path,true) or nil
-    if raw and raw~="" then
-        local ok,legacy=pcall(Json.decode,raw)
-        if ok and type(legacy)=="table" then
-            DownloadDatabase.set_download_state(self,legacy)
-            os.remove(legacy_path)
-            return legacy
-        end
-    end
-    return {}
-end
-function Store:save_download_state(value)
-    return DownloadDatabase.set_download_state(self,value or {})
-end
-function Store:clear_download_state()
-    if self.legacy_download_state_path then os.remove(self.legacy_download_state_path) end
-    return DownloadDatabase.clear_download_state(self)
-end
-function Store:download_queue()
-    local queue=DownloadDatabase.get_download_queue(self)
-    if type(queue)~="table" or next(queue)==nil then
-        local legacy=self:get("download_queue",{})
-        if type(legacy)=="table" and #legacy>0 then
-            DownloadDatabase.set_download_queue(self,legacy)
-            self:set("download_queue",{})
-            queue=legacy
-        end
-    end
-    if type(queue)~="table" then return {} end
-    if #queue<=1 then return queue end
-    return {queue[1]}
-end
-function Store:save_download_queue(queue)
-    queue=type(queue)=="table" and queue or {}
-    local kept={}
-    if type(queue[1])=="table" then kept[1]=U.copy(queue[1]) end
-    return DownloadDatabase.set_download_queue(self,kept)
-end
-function Store:enqueue_download(job)
-    local queue=self:download_queue()
-    if #queue>=1 then return nil,"full" end
-    queue[1]=U.copy(job or {})
-    self:save_download_queue(queue)
-    return 1
-end
-function Store:dequeue_download()
-    local queue=self:download_queue(); if #queue==0 then return nil end
-    local job=table.remove(queue,1); self:save_download_queue(queue); return job
-end
-function Store:remove_queued_download(index)
-    local queue=self:download_queue(); index=tonumber(index); if not index or not queue[index] then return false end
-    table.remove(queue,index); self:save_download_queue(queue); return true
-end
 function Store:pending_installs() return self:get("pending_installs",{}) end
 function Store:save_pending_installs(rows) self:set("pending_installs",type(rows)=="table" and rows or {}) end
 function Store:add_pending_install(book_id,kind,chapter_uid,record)

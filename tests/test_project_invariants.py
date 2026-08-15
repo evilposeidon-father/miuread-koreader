@@ -217,6 +217,18 @@ class MainLuaStructureTests(unittest.TestCase):
             missing = sorted(used - declared)
             self.assertEqual([], missing, f"{name} uses modules without require: {missing}")
 
+    def test_store_downloads_reader_installed(self):
+        store = read_text("miuread.koplugin/miuread/store.lua")
+        module = read_text("miuread.koplugin/miuread/store_downloads.lua")
+        defaults = read_text("miuread.koplugin/miuread/store_defaults.lua")
+        self.assertIn('local StoreDownloads=require("miuread.store_downloads")', store)
+        self.assertIn("for name,func in pairs(StoreDownloads) do Store[name]=func end", store)
+        self.assertNotIn("function Store:download_state(", store)
+        self.assertNotIn("local defaults={", store)
+        self.assertIn("local defaults={", defaults)
+        for method in ["download_state", "save_download_state", "download_queue", "enqueue_download", "dequeue_download"]:
+            self.assertIn(f"function StoreDownloads:{method}(", module)
+
     def test_home_order_mirrors_stay_in_sync(self):
         main = read_text("miuread.koplugin/main.lua")
         mirrors = [

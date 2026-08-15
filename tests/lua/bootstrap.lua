@@ -34,6 +34,50 @@ local function install(name, module)
     preload[name] = function() return module end
 end
 
+-- Minimal pure-Lua JSON for headless tests; the smoke stubs install the same
+-- engine, so both paths agree.
+do
+    local json = {}
+    local function escape(value)
+        return (value:gsub("[%z\1-\31\\\"]", function(char)
+            return string.format("\\u%04x", char:byte())
+        end))
+    end
+    local function encode(value)
+        local kind = type(value)
+        if value == nil then return "null" end
+        if kind == "boolean" then return value and "true" or "false" end
+        if kind == "number" then
+            if value ~= value then return "null" end
+            return string.format("%.14g", value)
+        end
+        if kind == "string" then return '"' .. escape(value) .. '"' end
+        if kind ~= "table" then error("cannot json-encode " .. kind) end
+        local is_array, max = true, 0
+        for key in pairs(value) do
+            if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then is_array = false break end
+            if key > max then max = key end
+        end
+        if is_array and max == 0 then return "[]" end
+        local parts = {}
+        if is_array then
+            for index = 1, max do parts[index] = encode(value[index]) end
+            return "[" .. table.concat(parts, ",") .. "]"
+        end
+        for key, item in pairs(value) do
+            if type(key) ~= "string" then error("json object keys must be strings") end
+            parts[#parts + 1] = encode(key) .. ":" .. encode(item)
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    local function decode(text)
+        return loadstring("return " .. tostring(text))()
+    end
+    json.encode, json.decode = encode, decode
+    install("json", json)
+    install("rapidjson", json)
+end
+
 install("logger", {
     info = function() end,
     warn = function() end,

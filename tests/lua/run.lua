@@ -23,6 +23,7 @@ local suites = {
     "test_lazy",
     "test_progress_decision",
     "test_session_state",
+    "test_store_downloads",
     "test_smoke",
 }
 
