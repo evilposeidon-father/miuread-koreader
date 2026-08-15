@@ -137,6 +137,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginNavigation", "plugin_navigation.lua", ["_reader_file", "return_to_miuread_home", "_request_reader_close", "onHome", "onReaderReady", "onSetDimensions"]),
             ("PluginNativeMenu", "plugin_native_menu.lua", ["_guard_native_koreader_menu", "_show_native_koreader_menu", "_finish_native_menu_visit"]),
             ("PluginShelf", "plugin_shelf.lua", ["load_shelf", "show_shelf", "show_mp_shelf"]),
+            ("PluginHome", "plugin_home.lua", ["_home_preferences", "_home_begin_resume", "home_mode_menu", "_home_schedule_cover_derivatives"]),
         ]:
             module_path = f"miuread.koplugin/miuread/{file_name}"
             self.assertIn(f'local {module_name}=require("miuread.{file_name[:-4]}")', main)
@@ -217,6 +218,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "plugin_navigation.lua",
             "plugin_native_menu.lua",
             "plugin_shelf.lua",
+            "plugin_home.lua",
         ]:
             text = read_text(f"miuread.koplugin/miuread/{name}")
             declared = set(re.findall(r'^local\s+(\w+)\s*=\s*(?:require|Lazy|gesture_aware_class)\(', text, re.M))
@@ -268,18 +270,19 @@ class MainLuaStructureTests(unittest.TestCase):
         for method in ["mark_last_read", "recent_reads", "record_recent_read", "shelf_cache", "update_cached_progress", "cover_guard", "cover_path"]:
             self.assertIn(f"function StoreMeta:{method}(", meta)
 
-    def test_home_order_mirrors_stay_in_sync(self):
+    def test_home_layout_constants_single_source(self):
         main = read_text("miuread.koplugin/main.lua")
-        mirrors = [
-            ("HOME_ACTION_ITEM_ORDER", "miuread.koplugin/miuread/plugin_preferences.lua"),
-            ("HOME_PANEL_ITEM_ORDER", "miuread.koplugin/miuread/plugin_device.lua"),
-        ]
-        for name, module_path in mirrors:
-            main_order = re.search(rf"local {name}=\{{[^}}]*\}}", main)
-            module_order = re.search(rf"local {name}=\{{[^}}]*\}}", read_text(module_path))
-            self.assertIsNotNone(main_order, f"main.lua {name} missing")
-            self.assertIsNotNone(module_order, f"{module_path} {name} missing")
-            self.assertEqual(main_order.group(0), module_order.group(0), name)
+        layouts = read_text("miuread.koplugin/miuread/home_layout_constants.lua")
+        preferences = read_text("miuread.koplugin/miuread/plugin_preferences.lua")
+        device = read_text("miuread.koplugin/miuread/plugin_device.lua")
+        self.assertIn("HOME_ACTION_ITEM_ORDER", layouts)
+        self.assertIn("HOME_PANEL_ITEM_ORDER", layouts)
+        self.assertIn("HomeLayouts.HOME_ACTION_ITEM_ORDER", main)
+        self.assertIn("HomeLayouts.HOME_ACTION_ITEM_ORDER", preferences)
+        self.assertIn("HomeLayouts.HOME_PANEL_ITEM_ORDER", main)
+        self.assertIn("HomeLayouts.HOME_PANEL_ITEM_ORDER", device)
+        self.assertNotIn("local HOME_ACTION_ITEM_ORDER={", preferences)
+        self.assertNotIn("local HOME_PANEL_ITEM_ORDER={", device)
 
     def test_reader_panel_base_usage(self):
         dialogs = [

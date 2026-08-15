@@ -20,6 +20,7 @@
 - 架构 继续拆分 `main.lua`：新增 `miuread.plugin_navigation`（阅读打开/关闭/重建/返回状态机，约 38 方法；主页渲染方法留在 main）；`normalized_reader_file` / `mark_reader_origin` 上收至 session_state；`main.lua` 约 11589 → 10553 行。
 - 架构 继续拆分 `main.lua`：新增 `miuread.plugin_native_menu`（原生 KOReader 菜单守护，6 方法）；`onReaderReady` / `onSetDimensions` 并入 plugin_navigation；`main.lua` 约 10553 → 10087 行。
 - 架构 继续拆分 `main.lua`：新增 `miuread.plugin_shelf`（书架加载/行构建/封面缓存/公众号书架，约 35 方法），SHELF_CACHE_TTL 常量迁入；`main.lua` 约 10087 → 9279 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_home`（主页模式/后台调度/封面派生/时间显示，约 70 方法）；主页布局常量与匹配 helper 上收至 `miuread.home_layout_constants`（main/preferences/device 全部改为共享引用，删除镜像）；`main.lua` 约 9279 → 7305 行。
 - 测试 新增 Lua 5.1 无头测试套件 `tests/lua/run.lua`：纯逻辑单测（digests/codec/util/timezone/ui_scale/lazy）与插件 smoke 加载测试（stub KOReader 后加载 main.lua、全部控制器与懒加载 UI 模块）；`scripts/bootstrap_lua51.py` 可本地编译 Lua 5.1，CI 在语法检查后直接运行该套件。
 - 测试 Python 结构回归测试通过 `tests/test_lua_suite.py` 统一执行 Lua 套件（本地与 CI 均跑）。
 

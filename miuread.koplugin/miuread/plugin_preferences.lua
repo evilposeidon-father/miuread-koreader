@@ -37,9 +37,9 @@ local function home_session() return Session.home() end
 local function home_exiting() return Session.home_exiting() end
 local function reader_close_active() return Session.reader_close_active() end
 
--- Mirrors main.lua's HOME_ACTION_ITEM_ORDER; main.lua owns the home surface
--- and keeps the authoritative copy for its own home menu code.
-local HOME_ACTION_ITEM_ORDER={"refresh","search","downloads","sync","sleep","miuread_settings","all_books","history","file_manager","screenshot"}
+-- Home layout constants live in miuread.home_layout_constants.
+local HomeLayouts = require("miuread.home_layout_constants")
+local HOME_ACTION_ITEM_ORDER = HomeLayouts.HOME_ACTION_ITEM_ORDER
 
 local Plugin = {}
 

@@ -36,9 +36,9 @@ local function monotonic_wall_time()
     return os.time()
 end
 
--- Mirrors main.lua's HOME_PANEL_ITEM_ORDER; main.lua owns the home panel
--- definitions used elsewhere and keeps the authoritative copy.
-local HOME_PANEL_ITEM_ORDER={"wifi","bluetooth","rotate","screenshot","full_refresh","koreader_settings","return_koreader","quit","sync","miuread_settings","downloads","restart","sleep"}
+-- Home layout constants live in miuread.home_layout_constants.
+local HomeLayouts = require("miuread.home_layout_constants")
+local HOME_PANEL_ITEM_ORDER = HomeLayouts.HOME_PANEL_ITEM_ORDER
 
 local source = debug.getinfo(1, "S").source:gsub("^@", "")
 local ROOT = source:match("^(.*)[/\\]miuread[/\\]plugin_device%.lua$") or "."
