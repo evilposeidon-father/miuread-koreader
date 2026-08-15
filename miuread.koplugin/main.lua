@@ -79,6 +79,8 @@ local ReaderTransitionGuard=require("miuread.reader_transition_guard")
 local PluginMenu=require("miuread.plugin_menu")
 local PluginSettings=require("miuread.plugin_settings")
 local Actions=require("miuread.actions")
+local ExternalAnnotationsDB=require("miuread.external_annotations_db")
+local ExternalAnnotationSync=require("miuread.external_annotation_sync")
 local function gesture_aware_class(base, attributes)
     local class=base:extend(attributes or {})
     function class:handleEvent(event)
@@ -395,6 +397,7 @@ end
 local source=debug.getinfo(1,"S").source:gsub("^@",""); local ROOT=source:match("^(.*)/main%.lua$") or "."
 local RUNTIME_MODE_KEY="__MIUREAD_RUNTIME_MODE"
 local Plugin=WidgetContainer:extend{name="miuread",is_doc_only=false,version=Config.VERSION}
+ExternalAnnotationSync.install(Plugin)
 local function normalize(v) local b=v.bookInfo or v.book or v; return {bookId=tostring(b.bookId or v.bookId or ""),title=b.title or v.title or "未命名",author=b.author or v.author or "",cover=b.cover or v.cover,category=b.category or v.category,progress=tonumber(v.progress or b.progress or 0) or 0,updateTime=tonumber(v.updateTime or b.updateTime or 0) or 0} end
 local function sanitize_saved_auth(store)
     local auth=store:auth()
@@ -410,6 +413,7 @@ function Plugin:init()
     math.randomseed(os.time()+math.floor(collectgarbage("count")))
     sync_home_session()
     self.store=Store:new()
+    self.external_annotations_db=ExternalAnnotationsDB:new(self.store)
     local runtime_mode=rawget(_G,RUNTIME_MODE_KEY)
     if runtime_mode~="desktop" and runtime_mode~="plugin" then
         local configured=((self.store:preferences().home_ui or {}).enabled~=false)
@@ -1538,6 +1542,15 @@ function Plugin:reader_menu()
         out[#out+1]={text="全部阅读功能",callback=function() self:show_reader_control_center("reading") end}
     end
     out[#out+1]={text="当前书籍",sub_item_table_func=function() return self:current_book_menu() end}
+    do
+        local external_annotations_available=self:_external_annotations_menu_available()
+        out[#out+1]={
+            text="本地书划线与想法",
+            post_text=external_annotations_available and nil or "仅支持本地重排书籍",
+            enabled_func=function() return external_annotations_available end,
+            sub_item_table_func=function() return self:external_annotations_menu_items() end,
+        }
+    end
     out[#out+1]={text=self:_sync_menu_text(),sub_item_table_func=function() return self:sync_menu() end}
     out[#out+1]={text=self:_download_menu_text(),callback=function() self:show_downloads() end}
     out[#out+1]={text="觅阅设置",sub_item_table_func=function() return self:settings_menu() end}
@@ -11927,6 +11940,16 @@ function Plugin:_reader_quick_definitions()
             UIManager:scheduleIn(.05,function() self:show_reader_quick_panel() end)
         end},
         annotations={key="annotations",icon="highlight",label="批注",icon_scale=1.28,icon_nudge_y=-2,callback=function() self:_show_reader_annotation_panel(function() self:show_reader_quick_panel() end) end},
+        cloud_annotations={key="cloud_annotations",icon="sync",label="云端划线",icon_scale=1.04,active=self:_external_annotations_visible(),callback=function()
+            self:sync_external_annotations()
+        end},
+        local_upload={key="local_upload",icon="upload",label="本地上传",icon_scale=1.04,callback=function()
+            self:sync_local_annotations_now(false)
+        end},
+        toggle_annotations={key="toggle_annotations",icon="highlight",label="显隐划线",icon_scale=1.12,active=self:_external_annotations_visible(),callback=function()
+            self:toggle_external_annotations()
+            UIManager:scheduleIn(.05,function() self:show_reader_quick_panel() end)
+        end},
         edge_guard={key="edge_guard",icon=edge_enabled and "edge-guard" or "edge-guard-off",label="防误触",icon_scale=1.02,active=edge_enabled,callback=function()
             self:_show_reader_edge_guard_panel(function() self:show_reader_quick_panel() end)
         end},
@@ -11950,6 +11973,9 @@ function Plugin:_reader_quick_panel_options()
     local actions={
         definitions.search,
         definitions.back,
+        definitions.cloud_annotations,
+        definitions.local_upload,
+        definitions.toggle_annotations,
         definitions.annotations,
         definitions.comments,
         definitions.edge_guard,
@@ -12030,6 +12056,7 @@ function Plugin:_reader_quick_panel_options()
         {icon=self:_orientation_icon_key(),label="方向锁定",active=Orientation.is_session_locked(),callback=function() self:_orientation_toggle_lock() end,hold_callback=function() self:_show_orientation_panel() end},
         {icon="screenshot",label="截图",callback=function() ScreenshotMode.start(self) end},
         {icon="full-refresh",label="全屏刷新",callback=function() self:_home_full_refresh(true) end},
+        {icon="menu",label="KO菜单",callback=function() self:_show_koreader_reader_menu() end},
     }
 
     self._reader_toolbar_options_perf={
@@ -16642,6 +16669,8 @@ function Plugin:show_sync_status(detail)
         if detail then
             rows[#rows+1]={text="详细信息",separator=true,enabled=false}
             rows[#rows+1]={text="后台服务版本",post_text=tostring(s.service_version or "—"),enabled=false}
+            if s.last_position_basis then rows[#rows+1]={text="上次定位方式",post_text=U.first_line(s.last_position_basis,80),enabled=false} end
+            if s.last_position_fallback and s.last_position_fallback~="" then rows[#rows+1]={text="定位回退原因",post_text=U.first_line(s.last_position_fallback,80),enabled=false} end
             if s.last_stage then rows[#rows+1]={text="当前阶段",post_text=U.first_line(s.last_stage,80),enabled=false} end
             if s.last_error then rows[#rows+1]={text="最近错误",post_text=U.first_line(s.last_error,80),enabled=false} end
         end
@@ -16655,6 +16684,12 @@ function Plugin:show_sync_status(detail)
         lines[#lines+1]=""
         lines[#lines+1]="详细信息"
         lines[#lines+1]="单次阅读时间上限：30 秒"
+        if s.last_position_basis then
+            lines[#lines+1]="上次定位方式："..tostring(s.last_position_basis)
+        end
+        if s.last_position_fallback and s.last_position_fallback~="" then
+            lines[#lines+1]="定位回退原因："..U.first_line(s.last_position_fallback,120)
+        end
         lines[#lines+1]="后台服务版本："..tostring(s.service_version or "—")
         if s.last_elapsed then lines[#lines+1]="上次提交时长："..tostring(s.last_elapsed).." 秒" end
         if s.last_stage then lines[#lines+1]="当前阶段："..U.first_line(s.last_stage,160) end
@@ -18933,6 +18968,7 @@ function Plugin:_prepare_reader_disappearance(reason)
     end
     self._repair_prompt_open=false
     self:_teardown_thought_tap()
+    self:_teardown_external_annotations()
     self._progress_prompted_book_id=nil
     self._progress_check_running=false
     return true
@@ -19253,6 +19289,8 @@ function Plugin:onReaderReady()
     self:_schedule_reader_toolbar_state_refresh(nil,.35)
     self:_schedule_reader_toolbar_prewarm(ready_session,1.1)
     self:_teardown_thought_tap()
+    self:_teardown_external_annotations()
+    self:_setup_external_annotations()
     self._progress_prompted_book_id=nil
     self._progress_check_running=false
     self._progress_remote_retries={}

@@ -15,6 +15,18 @@ MiuRead（觅阅 · 微信读书助手）是面向 KOReader 的非官方微信�
 3. 完整重启 KOReader。
 4. 后续正式版可使用 MiuRead 内置更新功能升级。
 
+## Local-book WeRead annotations (branch feature)
+
+本分支新增「本地书划线与想法」能力：
+
+- 任意重排本地 EPUB/TXT 可匹配微信读书书籍，同步个人划线/想法到当前书显示
+- 无需重新生成 EPUB：使用 XPointer overlay 直接绘制划线
+- 同步支持取消与断点续传，每章/每批想法落 SQLite 后继续
+- 阅读快捷面板新增图标：`云端划线`、`本地上传`、`显隐划线`、`KO菜单`
+- 同步状态新增「上次定位方式 / 定位回退原因」用于排查进度偏移
+
+> 该能力当前随本分支维护，尚未进入正式版 release 流程。
+
 ## OTA Update Channel
 
 从 `4.3.0` 起，正式版更新清单由 GitHub Actions 在发布时自动生成，并发布到固定 `stable-channel` Release。

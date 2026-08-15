@@ -1836,6 +1836,14 @@ function Sync:upload(elapsed, callback, options)
     self:_decorate_legacy_context(legacy_book, record)
     local position_snapshot=type(options.position_override)=="table" and U.copy(options.position_override)
         or self:_position_for_report(ratio,options.precise_position==true or options.progress_only==true)
+    if type(position_snapshot)=="table" then
+        self.store:save_session(book_id,{
+            last_position_basis=tostring(position_snapshot.offset_basis
+                or position_snapshot.position_basis
+                or position_snapshot.source or "unknown"),
+            last_position_fallback=tostring(position_snapshot.precision_fallback or ""),
+        })
+    end
     self:_save_local_snapshot(book_id,position_snapshot)
     if type(position_snapshot)~="table" or position_snapshot.safe~=true or position_snapshot.progress==nil
         or tostring(position_snapshot.chapter_uid or "")=="" then
@@ -3458,6 +3466,8 @@ function Sync:status()
         last_http_code=self.last_http_code or (session and session.last_http_code),
         last_http_length=self.last_http_length or (session and session.last_http_length),
         last_payload_public=session and session.last_payload_public,
+        last_position_basis=session and session.last_position_basis,
+        last_position_fallback=session and session.last_position_fallback,
         next_due=self.next_due,consecutive_failures=self.consecutive_failures or (session and session.consecutive_failures) or 0,
         tick_count=self.tick_count,
         progress_enabled=self.store:preferences().sync.progress_enabled~=false,

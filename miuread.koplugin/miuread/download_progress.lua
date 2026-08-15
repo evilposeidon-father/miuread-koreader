@@ -114,7 +114,7 @@ function DownloadProgress:init()
         zero_sep = true,
         buttons = {{
             {
-                text = "取消下载",
+                text = self.cancel_text or "取消下载",
                 callback = function()
                     if self.cancelled then return end
                     self.cancelled = true
@@ -124,7 +124,7 @@ function DownloadProgress:init()
                 end,
             },
             {
-                text = "后台下载",
+                text = self.background_text or "后台下载",
                 callback = function()
                     if self.cancelled then return end
                     if self.on_background then self.on_background() end
