@@ -36,6 +36,7 @@ function T.test_load_main_and_controllers()
     test_method(plugin, "_guard_native_koreader_menu")
     test_method(plugin, "onReaderReady")
     test_method(plugin, "onSetDimensions")
+    test_method(plugin, "show_shelf")
 end
 
 function T.test_load_lazy_ui_modules()
