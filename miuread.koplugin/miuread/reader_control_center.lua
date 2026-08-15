@@ -17,34 +17,15 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local TransientGuard = require("miuread.transient_guard")
 local Skin = require("miuread.reader_skin")
+local PanelBase = require("miuread.reader_panel_base")
 local Ui = require("miuread.ui_components")
 
 local Screen = Device.screen
 local live_center
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize() return self[1]:getSize() end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
-local TapBox = InputContainer:extend{dimen = nil, callback = nil, enabled = true}
-function TapBox:init()
-    self.dimen = self.dimen or Geom:new{w = 1, h = 1}
-    self.ges_events = {TapSelect = {GestureRange:new{ges = "tap", range = self.dimen}}}
-end
-function TapBox:getSize() return Geom:new{w = self.dimen.w, h = self.dimen.h} end
-function TapBox:paintTo(bb, x, y)
-    self.dimen.x, self.dimen.y = x, y
-    if self[1] then self[1]:paintTo(bb, x, y) end
-end
-function TapBox:onTapSelect()
-    if self.enabled ~= false and self.callback then self.callback() end
-    return true
-end
-function TapBox:handleEvent(event)
-    return InputContainer.handleEvent(self, event)
-end
+local TapBox = Ui.TapBox
 
 local function list_icon(icon, width, height, enabled)
     return Ui.icon(icon, width, height, Skin.dp(20, 17, 27), {
@@ -54,33 +35,10 @@ local function list_icon(icon, width, height, enabled)
     })
 end
 
-local Center = InputContainer:extend{
+local Center = PanelBase:extend{
     name = "miuread_reader_control_center",
-    _miuread_transient = true,
-    _miuread_modal_surface = true,
-    covers_fullscreen = true,
-    stop_events_propagation = true,
-    opts = nil,
-    closed = false,
-    pending_action = nil,
     selected_key = nil,
 }
-
-function Center:handleEvent(event)
-    return InputContainer.handleEvent(self, event)
-end
-
-function Center:_close(action, cancel_pending)
-    if cancel_pending then
-        self.pending_action = nil
-    elseif action and not self.pending_action then
-        self.pending_action = action
-    end
-    if self.closed then return true end
-    self.closed = true
-    UIManager:close(self)
-    return true
-end
 
 function Center:_categories()
     local categories = self.opts and self.opts.categories or {}
@@ -377,46 +335,16 @@ function Center:init()
     self.opts = self.opts or {}
     self.selected_key = tostring(self.opts.initial_category or "")
     self[1] = self:_build_root()
-    self.ges_events = {
-        TapDismiss = {GestureRange:new{ges = "tap", range = self.dimen}},
-        SwipeDismiss = {GestureRange:new{ges = "swipe", range = self.dimen}},
-    }
-    if Device:hasKeys() and Device.input and Device.input.group and Device.input.group.Back then
-        self.key_events = {Close = {{Device.input.group.Back}}}
-    end
+    self:_init_dismiss()
 end
 
-function Center:onTapDismiss(_, ges)
-    local pos = ges and ges.pos
-    if pos and (pos.y < self.panel_dimen.y or pos.y > self.panel_dimen.y + self.panel_dimen.h
-        or pos.x < self.panel_dimen.x or pos.x > self.panel_dimen.x + self.panel_dimen.w) then
-        return self:_close(nil, true)
-    end
-    return false
-end
-function Center:onSwipeDismiss(_, ges)
-    if ges and ges.direction == "north" then return self:_close(nil, true) end
-    return false
-end
 function Center:onClose()
     return self:_close(self.opts and self.opts.on_back or nil)
 end
-function Center:onShow()
-    UIManager:setDirty(self, function() return "ui", Skin.expand_region(self.panel_dimen) end)
-end
 function Center:onCloseWidget()
-    local region = self.panel_dimen and Skin.expand_region(self.panel_dimen) or nil
-    local action = self.pending_action
-    self.pending_action = nil
-    self.closed = true
-    if live_center == self then live_center = nil end
-    if region then UIManager:setDirty(nil, function() return "ui", region end) end
-    if action then
-        UIManager:scheduleIn(.04, function()
-            local ok, err = pcall(action)
-            if not ok then logger.warn("[MiuRead][ReaderControlCenter] action failed", tostring(err)) end
-        end)
-    end
+    self:finish_close_widget(function(widget)
+        if live_center == widget then live_center = nil end
+    end, "[MiuRead][ReaderControlCenter] action failed")
 end
 
 local M = {}

@@ -15,34 +15,15 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local TransientGuard = require("miuread.transient_guard")
 local Skin = require("miuread.reader_skin")
+local PanelBase = require("miuread.reader_panel_base")
 local Ui = require("miuread.ui_components")
 
 local Screen = Device.screen
 local live_dialog
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize() return self[1]:getSize() end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
-local TapBox = InputContainer:extend{dimen = nil, callback = nil, enabled = true}
-function TapBox:init()
-    self.dimen = self.dimen or Geom:new{w = 1, h = 1}
-    self.ges_events = {TapSelect = {GestureRange:new{ges = "tap", range = self.dimen}}}
-end
-function TapBox:getSize() return Geom:new{w = self.dimen.w, h = self.dimen.h} end
-function TapBox:paintTo(bb, x, y)
-    self.dimen.x, self.dimen.y = x, y
-    if self[1] then self[1]:paintTo(bb, x, y) end
-end
-function TapBox:onTapSelect(_, ges)
-    if self.enabled ~= false and self.callback then self.callback(ges) end
-    return true
-end
-function TapBox:handleEvent(event)
-    return InputContainer.handleEvent(self, event)
-end
+local TapBox = Ui.TapBox
 
 local ProgressTap = TapBox:extend{}
 function ProgressTap:onTapSelect(_, ges)
@@ -54,12 +35,8 @@ function ProgressTap:onTapSelect(_, ges)
     return true
 end
 
-local Dialog = InputContainer:extend{
+local Dialog = PanelBase:extend{
     name = "miuread_reader_progress_dialog",
-    _miuread_transient = true,
-    _miuread_modal_surface = true,
-    covers_fullscreen = true,
-    stop_events_propagation = true,
     percent = 0,
     on_goto_percent = nil,
     on_adjust = nil,
@@ -68,25 +45,7 @@ local Dialog = InputContainer:extend{
     on_next_chapter = nil,
     on_back = nil,
     on_home = nil,
-    closed = false,
-    pending_action = nil,
 }
-
-function Dialog:handleEvent(event)
-    return InputContainer.handleEvent(self, event)
-end
-
-function Dialog:_close(action, cancel_pending)
-    if cancel_pending then
-        self.pending_action = nil
-    elseif action and not self.pending_action then
-        self.pending_action = action
-    end
-    if self.closed then return true end
-    self.closed = true
-    UIManager:close(self)
-    return true
-end
 
 function Dialog:_button(label, width, height, callback, primary)
     local tap = TapBox:new{
@@ -128,13 +87,7 @@ function Dialog:init()
     self.panel_h = math.min(sh - top_inset - math.max(28, math.floor(sh * .052)), pad * 2 + content_h)
     self.dimen = Geom:new{x = 0, y = 0, w = sw, h = sh}
     self.frame_dimen = Geom:new{x = outer_margin, y = top_inset, w = panel_w, h = self.panel_h}
-    self.ges_events = {
-        TapDismiss = {GestureRange:new{ges = "tap", range = self.dimen}},
-        SwipeDismiss = {GestureRange:new{ges = "swipe", range = self.dimen}},
-    }
-    if Device:hasKeys() and Device.input and Device.input.group and Device.input.group.Back then
-        self.key_events = {Close = {{Device.input.group.Back}}}
-    end
+    self:_init_dismiss()
 
     local root = OverlapGroup:new{dimen = self.dimen:copy(), allow_mirroring = false}
     root[#root + 1] = OffsetContainer:new{
@@ -266,35 +219,11 @@ function Dialog:init()
     self[1] = root
 end
 
-function Dialog:onTapDismiss(_, ges)
-    local pos = ges and ges.pos
-    if pos and (pos.y < self.frame_dimen.y or pos.y > self.frame_dimen.y + self.frame_dimen.h
-        or pos.x < self.frame_dimen.x or pos.x > self.frame_dimen.x + self.frame_dimen.w) then
-        return self:_close(nil, true)
-    end
-    return false
-end
-function Dialog:onSwipeDismiss(_, ges)
-    if ges and ges.direction == "north" then return self:_close(nil, true) end
-    return false
-end
 function Dialog:onClose() return self:_close(self.on_back) end
-function Dialog:onShow()
-    UIManager:setDirty(self, function() return "ui", Skin.expand_region(self.frame_dimen) end)
-end
 function Dialog:onCloseWidget()
-    local region = self.frame_dimen and Skin.expand_region(self.frame_dimen) or nil
-    local action = self.pending_action
-    self.pending_action = nil
-    self.closed = true
-    if live_dialog == self then live_dialog = nil end
-    if region then UIManager:setDirty(nil, function() return "ui", region end) end
-    if action then
-        UIManager:scheduleIn(.04, function()
-            local ok, err = pcall(action)
-            if not ok then logger.warn("[MiuRead][ReaderProgressDialog] action failed", tostring(err)) end
-        end)
-    end
+    self:finish_close_widget(function(widget)
+        if live_dialog == widget then live_dialog = nil end
+    end, "[MiuRead][ReaderProgressDialog] action failed")
 end
 
 local M = {}

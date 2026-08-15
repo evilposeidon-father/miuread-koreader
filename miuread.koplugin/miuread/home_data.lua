@@ -56,10 +56,18 @@ function HomeData.reading_stats(force)
             statement:clearbind():reset()
             local week = statement:bind(week_start):step()
             statement:close()
+            local week_pages_statement = conn:prepare([[
+                SELECT COUNT(DISTINCT (id_book || ':' || page))
+                  FROM page_stat_data
+                 WHERE start_time >= ?
+            ]])
+            local week_pages_row = week_pages_statement:bind(week_start):step()
+            week_pages_statement:close()
             result = {
                 today_seconds = tonumber(today and today[1]) or 0,
                 today_pages = tonumber(today and today[2]) or 0,
                 week_seconds = tonumber(week and week[1]) or 0,
+                week_pages = tonumber(week_pages_row and week_pages_row[1]) or 0,
             }
         end)
         conn:close()

@@ -17,59 +17,15 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local FaceFactory = require("miuread.thought_face_factory")
 local Skin = require("miuread.reader_skin")
+local PanelBase = require("miuread.reader_panel_base")
 local Ui = require("miuread.ui_components")
 
 local Screen = Device.screen
 local live_dialog
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize() return self[1]:getSize() end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
-local TapBox = InputContainer:extend{
-    dimen = nil,
-    callback = nil,
-    hold_callback = nil,
-    enabled = true,
-    _hold_handled = false,
-    _miu_tap_block_until = 0,
-}
-function TapBox:init()
-    self.dimen = self.dimen or Geom:new{w = 1, h = 1}
-    self.ges_events = {
-        TapSelect = {GestureRange:new{ges = "tap", range = self.dimen}},
-        HoldSelect = {GestureRange:new{ges = "hold", range = self.dimen}},
-        HoldReleaseSelect = {GestureRange:new{ges = "hold_release", range = self.dimen}},
-    }
-end
-function TapBox:getSize() return Geom:new{w = self.dimen.w, h = self.dimen.h} end
-function TapBox:paintTo(bb, x, y)
-    self.dimen.x, self.dimen.y = x, y
-    if self[1] then self[1]:paintTo(bb, x, y) end
-end
-function TapBox:onTapSelect()
-    if self._hold_handled then self._hold_handled = false; return true end
-    if os.clock() < (tonumber(self._miu_tap_block_until) or 0) then return true end
-    if self.enabled ~= false and self.callback then self.callback() end
-    return true
-end
-function TapBox:onHoldSelect()
-    if self.enabled == false or not self.hold_callback then return false end
-    self._hold_handled = true
-    return true
-end
-function TapBox:onHoldReleaseSelect()
-    if self._hold_handled then
-        self._hold_handled = false
-        self._miu_tap_block_until = os.clock() + .20
-        if self.enabled ~= false and self.hold_callback then self.hold_callback() end
-        return true
-    end
-    return false
-end
-function TapBox:handleEvent(event) return InputContainer.handleEvent(self, event) end
+local TapBox = Ui.TapBox:extend{hold_on_release = true}
 
 local function resolved(value, fallback)
     if type(value) == "function" then
@@ -82,25 +38,9 @@ local function resolved(value, fallback)
     return value
 end
 
-local Dialog = InputContainer:extend{
+local Dialog = PanelBase:extend{
     name = "miuread_reader_typography_dialog",
-    _miuread_transient = true,
-    _miuread_modal_surface = true,
-    covers_fullscreen = true,
-    stop_events_propagation = true,
-    opts = nil,
-    closed = false,
-    pending_action = nil,
 }
-function Dialog:handleEvent(event) return InputContainer.handleEvent(self, event) end
-
-function Dialog:_close(action)
-    if action and not self.pending_action then self.pending_action = action end
-    if self.closed then return true end
-    self.closed = true
-    UIManager:close(self)
-    return true
-end
 
 function Dialog:_controls()
     local rows = resolved(self.opts and self.opts.controls, {})
@@ -360,15 +300,19 @@ function Dialog:_rebuild()
 end
 
 function Dialog:init()
+    self.opts = self.opts or {}
     self[1] = self:_build_content()
+    self:_init_dismiss()
+end
+
+function Dialog:onClose()
+    return self:_close(self.opts and self.opts.on_back or nil)
 end
 
 function Dialog:onCloseWidget()
-    if live_dialog == self then live_dialog = nil end
-    local action = self.pending_action
-    self.pending_action = nil
-    if action then UIManager:nextTick(action) end
-    return true
+    self:finish_close_widget(function(widget)
+        if live_dialog == widget then live_dialog = nil end
+    end, "[MiuRead][TypographyDialog] action failed")
 end
 
 local M = {}

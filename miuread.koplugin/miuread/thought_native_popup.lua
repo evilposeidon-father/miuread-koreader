@@ -20,6 +20,7 @@ local VerticalSpan = require("ui/widget/verticalspan")
 local Widget = require("ui/widget/widget")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local U = require("miuread.util")
+local Ui = require("miuread.ui_components")
 
 local Size = require("ui/size")
 
@@ -66,13 +67,7 @@ local function clear_layout_cache()
     layout_cache_order = {}
 end
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize()
-    return self[1]:getSize()
-end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
 local Separator = Widget:extend{
     dimen = nil,

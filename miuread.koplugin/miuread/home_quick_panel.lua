@@ -28,91 +28,16 @@ local live_panel
 local update_text
 
 local function face(name, nominal, maximum, minimum)
-    return UiScale.face(name, nominal, maximum, minimum)
+    return Ui.face(name, nominal, maximum, minimum)
 end
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize() return self[1]:getSize() end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
-local function fixed_frame(width, height, options, content)
-    options = options or {}
-    local border = tonumber(options.bordersize) or 0
-    local padding = tonumber(options.padding) or 0
-    local inset = border + padding
-    return FrameContainer:new{
-        bordersize = border,
-        padding = padding,
-        margin = 0,
-        radius = options.radius or 0,
-        background = options.background,
-        color = options.color or Blitbuffer.COLOR_BLACK,
-        CenterContainer:new{
-            dimen = Geom:new{
-                w = math.max(1, width - inset * 2),
-                h = math.max(1, height - inset * 2),
-            },
-            content or Widget:new{dimen = Geom:new{w = 1, h = 1}},
-        },
-    }
-end
+local fixed_frame = Ui.frame
 
-local TapBox = InputContainer:extend{
-    dimen = nil,
-    callback = nil,
-    hold_callback = nil,
-    _hold_handled = false,
-}
-function TapBox:init()
-    self.dimen = self.dimen or Geom:new{w = 1, h = 1}
-    self.ges_events = {
-        TapSelect = {GestureRange:new{ges = "tap", range = self.dimen}},
-    }
-    if self.hold_callback then
-        self.ges_events.HoldSelect = {GestureRange:new{ges = "hold", range = self.dimen}}
-        self.ges_events.HoldReleaseSelect = {GestureRange:new{ges = "hold_release", range = self.dimen}}
-    end
-end
-function TapBox:getSize() return Geom:new{w = self.dimen.w, h = self.dimen.h} end
-function TapBox:paintTo(bb, x, y)
-    self.dimen.x, self.dimen.y = x, y
-    if self[1] then self[1]:paintTo(bb, x, y) end
-end
-function TapBox:onTapSelect()
-    if self._hold_handled then
-        self._hold_handled = false
-        return true
-    end
-    if self.callback then self.callback(self.dimen and self.dimen:copy() or nil) end
-    return true
-end
-function TapBox:onHoldSelect()
-    self._hold_handled = false
-    if self.hold_callback then
-        self._hold_handled = true
-        self.hold_callback(self.dimen and self.dimen:copy() or nil)
-    end
-    return true
-end
-function TapBox:onHoldReleaseSelect()
-    if self._hold_handled then
-        self._hold_handled = false
-        return true
-    end
-    return false
-end
+local TapBox = Ui.TapBox
 
-local function tappable(width, height, child, callback, hold_callback)
-    local tap = TapBox:new{
-        dimen = Geom:new{w = width, h = height},
-        callback = callback,
-        hold_callback = hold_callback,
-    }
-    tap[1] = CenterContainer:new{dimen = Geom:new{w = width, h = height}, child}
-    return tap
-end
+local tappable = Ui.tappable
 
 local ControlSlider = InputContainer:extend{
     dimen=nil, bar_w=1, value_w=1, value_gap=0,
