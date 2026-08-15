@@ -1,15 +1,15 @@
 # miuread-koreader 项目摘要
 
-> {"title":"微信读书助手","summary":"KOReader 非官方微信读书客户端，支持
+> {"title":"微信读书助手","
 
 ## 统计
 
-- 代码文件：131
-- 代码行数：约 65600
-- 主要语言：.lua 126、.py 4、.json 1
-- 项目大小：2910.8 KB
-- 最后更新：2026-08-16 02:23
-- 摘要生成时间：2026-08-16 02:25
+- 代码文件：133
+- 代码行数：约 65871
+- 主要语言：.lua 128、.py 4、.json 1
+- 项目大小：2920.8 KB
+- 最后更新：2026-08-16 02:30
+- 摘要生成时间：2026-08-16 02:31
 
 ## 文件清单（前 60）
 
@@ -17,8 +17,8 @@
 - `miuread.koplugin\miuread\sync.lua`（3492 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
 - `miuread.koplugin\miuread\store.lua`（2183 行）
-- `miuread.koplugin\miuread\plugin_download.lua`（1843 行）
 - `miuread.koplugin\miuread\downloader.lua`（1839 行）
+- `miuread.koplugin\miuread\plugin_download.lua`（1774 行）
 - `miuread.koplugin\miuread\thought_native_popup.lua`（1458 行）
 - `miuread.koplugin\miuread\annotation_sync.lua`（1294 行）
 - `miuread.koplugin\miuread\reader.lua`（1183 行）
@@ -72,4 +72,4 @@
 - `miuread.koplugin\miuread\data_migration.lua`（299 行）
 - `miuread.koplugin\miuread\thought_face_factory.lua`（299 行）
 - `miuread.koplugin\miuread\download_progress.lua`（298 行）
-- `tests\test_project_invariants.py`（295 行）
+- `tests\test_project_invariants.py`（296 行）

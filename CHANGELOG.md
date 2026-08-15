@@ -5,6 +5,7 @@
 ## Unreleased
 
 - 架构 新增 `miuread.download_coordinator` 深模块：接管下载状态读写/节流、active 状态合并、状态文案、payload 形状、队列去重与下一任务启动判定；`plugin_download` 改为薄委托，新增 8 个纯逻辑单元测试（可注入时钟与假 store）。
+- 架构 新增 `miuread.progress_decision` 深模块：下沉进度同步纯决策（章节/偏移/百分比匹配、上传失败分类、本机-云端对齐判定）；`plugin_sync` 改为薄委托，新增 4 组纯逻辑单元测试。
 - 架构 新增 `miuread.session_state`：统一接管 5 个 `_G.__MIUREAD_*` 会话表的创建/字段归一与访问器，main.lua 与拆分控制器不再直接 `rawget(_G, ...)`；新增 session_state 单元测试。
 - 架构 继续拆分 `main.lua`：新增 `miuread.plugin_search_mp`、`miuread.plugin_repair`、`miuread.plugin_preferences`、`miuread.plugin_thought_popup`、`miuread.plugin_device`、`miuread.plugin_book`（书籍菜单/详情）、`miuread.plugin_events`（KOReader 事件入口），均沿用 `install(Plugin)` 模式；`main.lua` 从约 14430 行降至约 11700 行。
 - 测试 新增 Lua 5.1 无头测试套件 `tests/lua/run.lua`：纯逻辑单测（digests/codec/util/timezone/ui_scale/lazy）与插件 smoke 加载测试（stub KOReader 后加载 main.lua、全部控制器与懒加载 UI 模块）；`scripts/bootstrap_lua51.py` 可本地编译 Lua 5.1，CI 在语法检查后直接运行该套件。

@@ -21,6 +21,7 @@ local suites = {
     "test_timezone",
     "test_ui_scale",
     "test_lazy",
+    "test_progress_decision",
     "test_session_state",
     "test_smoke",
 }

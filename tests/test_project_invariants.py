@@ -159,7 +159,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "LocalBrowserView", "LocalLibrary", "LocalMetadata", "MemoryMode",
             "Menu", "MigrationProgress", "MP", "NetworkMetadata", "Orientation",
             "PathChooser", "PerformanceMode", "PluginMenu", "PluginSettings",
-            "Protocol", "Reader", "ReaderControlCenter", "ReaderFrontlightDialog",
+            "ProgressDecision", "Protocol", "Reader", "ReaderControlCenter", "ReaderFrontlightDialog",
             "ReaderListDialog", "ReaderProgressDialog", "ReaderSettingsDialog",
             "ReaderTocDialog", "ReaderToolbar", "ReaderTypographyDialog",
             "ScreenshotMode", "ShelfView", "StatusToast", "Store", "Sync",

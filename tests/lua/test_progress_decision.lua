@@ -1,0 +1,69 @@
+local B = require("tests.lua.bootstrap")
+local PD = require("miuread.progress_decision")
+
+local T = {}
+
+function T.test_remote_matches_percent_fallback()
+    local matched, percent = PD.remote_matches({ percent = 50 }, { progress = 51 }, 2)
+    B.eq(matched, true, "within threshold")
+    B.eq(percent, 50, "remote percent returned")
+    matched = PD.remote_matches({ percent = 53 }, { progress = 50 }, 2)
+    B.eq(matched, false, "outside threshold")
+end
+
+function T.test_remote_matches_chapter_offset()
+    local target = { progress = 40, chapter_uid = "u1", chapter_offset = 1000, chapter_word_count = 5000 }
+    local matched, percent, source, meta = PD.remote_matches(
+        { percent = 41, chapter_uid = "u1", offset = 1010, source = "agent_gateway" },
+        target, 2)
+    B.eq(matched, true, "offset within tolerance")
+    B.eq(source, "agent_gateway")
+    B.ok(meta.co_delta <= meta.co_tolerance, "delta reported")
+    matched = PD.remote_matches({ chapter_uid = "u2", offset = 1000 }, target, 2)
+    B.eq(matched, false, "different chapter rejected")
+end
+
+function T.test_remote_matches_conflict_sources()
+    local target = { progress = 20, chapter_uid = "u1", chapter_offset = 500, chapter_word_count = 3000 }
+    local remote = { conflict = true,
+        web = { percent = 21, chapter_uid = "u1", offset = 510, source = "web_cookie" },
+        agent = { percent = 80, chapter_uid = "u9", offset = 10, source = "agent_gateway" } }
+    local matched, percent, source = PD.remote_matches(remote, target, 2)
+    B.eq(matched, true, "web source wins")
+    B.eq(source, "web_cookie")
+    remote.web = { percent = 21, chapter_uid = "u9", offset = 520, source = "web_cookie" }
+    matched, percent, source = PD.remote_matches(remote, target, 2)
+    B.eq(matched, false, "both conflict sources mismatch")
+end
+
+function T.test_upload_failure_classification()
+    local repair, kind, state = PD.upload_failure(
+        { sync_repair_required = true, sync_repair_kind = "context", last_error_kind = "transport" }, "")
+    B.eq(repair, true, "repair detected")
+    B.eq(kind, "transport")
+    B.eq(state, "upload_unconfirmed", "transport falls to unconfirmed")
+    repair, kind, state = PD.upload_failure(
+        { sync_repair_kind = "position", last_error_kind = "authentication" }, nil)
+    B.eq(repair, false, "no repair without flag")
+    B.eq(state, "upload_failed", "authentication is failed")
+    repair, kind, state = PD.upload_failure(nil, "server")
+    B.eq(state, "upload_unconfirmed", "sync-level server error")
+end
+
+function T.test_resolve_alignment()
+    local local_position = { progress = 40, chapter_uid = "u1", chapter_offset = 1000, chapter_word_count = 5000 }
+    local remote = { percent = 41, chapter_uid = "u1", offset = 1010 }
+    local action, coordinate_match, remotep = PD.resolve_alignment(local_position, remote, "different", 2)
+    B.eq(action, "aligned", "coordinate match wins over compare")
+    B.eq(coordinate_match, true)
+    B.eq(remotep, 41)
+    remote = { percent = 45 }
+    action, coordinate_match = PD.resolve_alignment({ progress = 40 }, remote, "same", 2)
+    B.eq(action, "aligned", "compare same wins")
+    B.eq(coordinate_match, false, "no coordinate match")
+    remote = { percent = 80 }
+    action = PD.resolve_alignment({ progress = 40 }, remote, "different", 2)
+    B.eq(action, "different", "both disagree")
+end
+
+return T

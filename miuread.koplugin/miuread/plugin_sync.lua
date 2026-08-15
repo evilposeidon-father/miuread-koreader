@@ -8,6 +8,7 @@ local Text = require("miuread.text")
 local Http = require("miuread.http")
 local HomeView = require("miuread.home_view")
 local LocalAnnotationDatabase = require("miuread.local_annotation_database")
+local ProgressDecision = require("miuread.progress_decision")
 local GestureBridge = require("miuread.gesture_bridge")
 local RawButtonDialog = require("ui/widget/buttondialog")
 local RawConfirmBox = require("ui/widget/confirmbox")
@@ -528,9 +529,10 @@ function Plugin:ensure_read_report_progress(reason,automatic)
                 return
             end
             local remotep=math.floor((tonumber(remote.percent) or 0)+.5)
-            local coordinate_match=self:_remote_matches(remote,local_position)
-            local cmp=self.sync:compare(localp,remote)
-            if coordinate_match or cmp=="same" then
+            local threshold=tonumber(self.store:preferences().sync.threshold) or 2
+            local action,coordinate_match=ProgressDecision.resolve_alignment(
+                local_position,remote,self.sync:compare(localp,remote),threshold)
+            if action=="aligned" then
                 self.sync:mark_verified(id,"positions_aligned",localp,remotep,local_position)
                 self:_save_progress_state(id,"aligned",coordinate_match and "章节位置一致" or "本机与云端位置接近",localp,remotep)
                 self.sync:end_progress_sync("位置已确认，阅读时间开始同步")
@@ -577,41 +579,7 @@ end
 
 function Plugin:_remote_matches(remote,target)
     local threshold=tonumber(self.store:preferences().sync.threshold) or 2
-    if not remote then return false,nil,nil end
-    local target_position=type(target)=="table" and target or nil
-    local target_percent=target_position and tonumber(target_position.progress) or tonumber(target)
-    if target_percent==nil then return false,nil,nil end
-    local target_uid=target_position and tostring(target_position.chapter_uid or target_position.chapterUid or "") or ""
-    local target_co=target_position and tonumber(target_position.chapter_offset or target_position.offset)
-    local chapter_words=target_position and tonumber(target_position.chapter_word_count) or 0
-    local co_tolerance=math.max(12,math.floor((chapter_words or 0)*0.005))
-
-    local function match(candidate)
-        if not candidate then return false,nil,nil end
-        local percent=tonumber(candidate.percent)
-        local candidate_uid=tostring(candidate.chapter_uid or candidate.chapterUid or "")
-        local candidate_co=tonumber(candidate.offset or candidate.chapter_offset)
-        if target_uid~="" and candidate_uid~="" and target_uid~=candidate_uid then
-            return false,percent,candidate.source,{reason="chapter_uid_mismatch"}
-        end
-        if target_co~=nil and candidate_co~=nil and target_uid~="" and candidate_uid~="" then
-            local delta=math.abs(candidate_co-target_co)
-            if delta<=co_tolerance then
-                return true,percent,candidate.source,{co_delta=delta,co_tolerance=co_tolerance}
-            end
-            return false,percent,candidate.source,{
-                reason="chapter_offset_mismatch",co_delta=delta,co_tolerance=co_tolerance,
-            }
-        end
-        return percent and math.abs(percent-target_percent)<=threshold,
-            percent,candidate.source,{reason="percent_fallback"}
-    end
-    if remote.conflict then
-        local ok,pct,source,meta=match(remote.web); if ok then return true,pct,source,meta end
-        ok,pct,source,meta=match(remote.agent); if ok then return true,pct,source,meta end
-        return false,nil,nil,meta
-    end
-    return match(remote)
+    return ProgressDecision.remote_matches(remote,target,threshold)
 end
 
 function Plugin:upload_local_progress(manual,callback)
@@ -651,10 +619,7 @@ function Plugin:upload_local_progress(manual,callback)
         local upload_started=self.sync:upload_progress(function(ok,result,submitted)
             if not ok then
                 local current_session=self.store:session(id) or {}
-                local repair=current_session.sync_repair_required==true
-                    and (tostring(current_session.sync_repair_kind or "")=="context" or tostring(current_session.sync_repair_kind or "")=="position")
-                local kind=tostring(current_session.last_error_kind or self.sync.last_error_kind or "")
-                local state=(kind=="transport" or kind=="server" or kind=="unconfirmed") and "upload_unconfirmed" or "upload_failed"
+                local repair,kind,state=ProgressDecision.upload_failure(current_session,self.sync.last_error_kind or "")
                 self:_save_progress_state(id,state,repair and "当前书籍同步信息需要修复" or "本次上传暂未完成",target,nil)
                 self.sync:end_progress_sync(repair and "当前书籍同步信息需要修复" or "本次上传暂未完成，稍后可继续")
                 if manual then
