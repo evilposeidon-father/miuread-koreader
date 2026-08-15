@@ -4,7 +4,7 @@
 
 ## Unreleased
 
-- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_search_mp` 控制器（书籍搜索 + 公众号文章/缓存），沿用 `install(Plugin)` 模式；`main.lua` 从约 14430 行降至约 14005 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_search_mp`（搜索 + 公众号）、`miuread.plugin_repair`（重新生成/维修/迁移）、`miuread.plugin_preferences`（设置、本地书库、性能/内存、字体菜单），均沿用 `install(Plugin)` 模式；`main.lua` 从约 14430 行降至约 12705 行。
 - 测试 新增 Lua 5.1 无头测试套件 `tests/lua/run.lua`：纯逻辑单测（digests/codec/util/timezone/ui_scale/lazy）与插件 smoke 加载测试（stub KOReader 后加载 main.lua、全部控制器与懒加载 UI 模块）；`scripts/bootstrap_lua51.py` 可本地编译 Lua 5.1，CI 在语法检查后直接运行该套件。
 - 测试 Python 结构回归测试通过 `tests/test_lua_suite.py` 统一执行 Lua 套件（本地与 CI 均跑）。
 

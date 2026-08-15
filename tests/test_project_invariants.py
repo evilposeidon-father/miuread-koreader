@@ -127,6 +127,8 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginDownload", "plugin_download.lua", ["download", "show_downloads", "show_download_cleanup_dialog"]),
             ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu"]),
             ("PluginSearchMp", "plugin_search_mp.lua", ["search", "search_dialog", "open_or_download_mp_article"]),
+            ("PluginRepair", "plugin_repair.lua", ["repair_current_book", "show_repair_history", "redownload_current"]),
+            ("PluginPreferences", "plugin_preferences.lua", ["settings_menu", "performance_settings_menu", "local_library_settings_menu"]),
         ]:
             module_path = f"miuread.koplugin/miuread/{file_name}"
             self.assertIn(f'local {module_name}=require("miuread.{file_name[:-4]}")', main)
@@ -196,6 +198,8 @@ class MainLuaStructureTests(unittest.TestCase):
             "plugin_download.lua",
             "plugin_reader.lua",
             "plugin_search_mp.lua",
+            "plugin_repair.lua",
+            "plugin_preferences.lua",
         ]:
             text = read_text(f"miuread.koplugin/miuread/{name}")
             declared = set(re.findall(r'^local\s+(\w+)\s*=\s*(?:require|Lazy|gesture_aware_class)\(', text, re.M))
@@ -203,6 +207,19 @@ class MainLuaStructureTests(unittest.TestCase):
             used = {n for n in module_names if re.search(rf"\b{n}\b", code)}
             missing = sorted(used - declared)
             self.assertEqual([], missing, f"{name} uses modules without require: {missing}")
+
+    def test_home_action_order_mirror_stays_in_sync(self):
+        main_order = re.search(
+            r"local HOME_ACTION_ITEM_ORDER=\{[^}]*\}",
+            read_text("miuread.koplugin/main.lua"),
+        )
+        preferences_order = re.search(
+            r"local HOME_ACTION_ITEM_ORDER=\{[^}]*\}",
+            read_text("miuread.koplugin/miuread/plugin_preferences.lua"),
+        )
+        self.assertIsNotNone(main_order, "main.lua HOME_ACTION_ITEM_ORDER missing")
+        self.assertIsNotNone(preferences_order, "plugin_preferences HOME_ACTION_ITEM_ORDER missing")
+        self.assertEqual(main_order.group(0), preferences_order.group(0))
 
     def test_reader_panel_base_usage(self):
         dialogs = [
