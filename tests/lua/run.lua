@@ -15,6 +15,7 @@ dofile(script_root .. "/tests/lua/bootstrap.lua")
 
 local suites = {
     "test_digests",
+    "test_download_coordinator",
     "test_util",
     "test_codec",
     "test_timezone",

@@ -14,6 +14,7 @@ local HomeView = require("miuread.home_view")
 local HomeData = require("miuread.home_data")
 local DownloadProgress = require("miuread.download_progress")
 local DownloadResult = require("miuread.download_result")
+local DownloadCoordinator = require("miuread.download_coordinator")
 local BookIntegrity = require("miuread.book_integrity")
 local EpubInstaller = require("miuread.epub_installer")
 local Cookies = require("miuread.cookies")
@@ -48,6 +49,17 @@ local ThoughtNativePopup = Lazy("miuread.thought_native_popup")
 local _ = Text.tr
 
 local Plugin = {}
+
+-- Lazily attach the deep download state/queue coordinator to this plugin
+-- instance. The coordinator owns persisted-state and queue invariants.
+local function coordinator(self)
+    local instance = rawget(self, "_download_coordinator")
+    if instance == nil then
+        instance = DownloadCoordinator.new(self.store)
+        rawset(self, "_download_coordinator", instance)
+    end
+    return instance
+end
 
 function Plugin:_download_preflight(callback)
     local state=HomeData.device_state(true) or {}
@@ -437,91 +449,25 @@ function Plugin:_recover_download_state()
     return false
 end
 function Plugin:_download_percent(state)
-    state=state or {}
-    local p=tonumber(state.percent)
-    if not p then
-        local current,total=tonumber(state.current) or 0,tonumber(state.total) or 0
-        p=total>0 and current/total or 0
-    elseif p>1 then p=p/100 end
-    if p<0 then p=0 elseif p>1 then p=1 end
-    return math.floor(p*100+0.5)
+    return coordinator(self):percent(state)
 end
 function Plugin:_download_state()
-    local runtime=self._download_runtime
-    if runtime and self.download_task and self.download_task:busy() then
-        local state=U.copy(runtime.last_state or {})
-        state.status="active"
-        state.title=runtime.book and runtime.book.title or state.title
-        state.book_id=runtime.book and runtime.book.bookId or state.book_id
-        state.background=runtime.background==true
-        return state
-    end
-    return self.store:download_state()
+    return coordinator(self):active_state(self._download_runtime,
+        self.download_task and self.download_task:busy())
 end
 function Plugin:_has_download_status()
-    if self.download_task and self.download_task:busy() then return true end
-    local state=self.store:download_state()
-    if state.status=="completed" then self.store:clear_download_state(); return false end
-    return state.status=="failed" or state.status=="interrupted" or state.status=="pending_install"
-        or state.status=="annotation_pending"
+    return coordinator(self):has_status(self.download_task and self.download_task:busy())
 end
 function Plugin:_download_status_label()
-    local state=self:_download_state()
-    if state.status=="active" then
-        if state.stage=="rate_limit" then
-            local wait=tonumber(state.wait_seconds) or 0
-            return wait>0 and ("后台下载 · 请求受限，"..tostring(wait).."秒后继续") or "后台下载 · 请求受限，等待恢复"
-        end
-        if state.stage=="restart" then return "后台下载 · 正在从断点恢复" end
-        if state.waiting_network==true or state.stage=="waiting_network" then return "后台下载 · 等待网络，已保存进度" end
-        local title=U.utf8_truncate(state.title or "未命名",9)
-        return "后台下载：《"..title.."》 "..tostring(self:_download_percent(state)).."%"
-    end
-    if state.status=="pending_install" then
-        return "后台下载 · 等待更新"
-    end
-    if state.status=="annotation_pending" then return "后台下载 · 正文已完成，批注待修复" end
-    if state.status=="completed" then return "后台下载 · 已完成" end
-    if state.status=="failed" and state.auth_required==true then return "后台下载 · 等待重新登录" end
-    if state.status=="failed" and state.error_kind=="network" then return "后台下载 · 等待网络，可继续" end
-    if state.status=="failed" and state.error_kind=="image_missing" then return "后台下载 · 正文图片待修复" end
-    if state.status=="failed" then return "后台下载 · 未完成" end
-    if state.status=="interrupted" then return "后台下载 · 可继续" end
-    return "后台下载"
+    return coordinator(self):status_label(self._download_runtime,
+        self.download_task and self.download_task:busy())
 end
 function Plugin:_write_download_state(status,patch,force)
-    local now=os.time()
-    local stage=patch and patch.stage
-    if not force and status=="active" and now-(self._download_state_last_write or 0)<2 and stage==self._download_state_last_stage then return end
-    local state
-    if force or status~="active" then state=U.copy(patch or {})
-    else state=U.merge(self.store:download_state(),patch or {}) end
-    state.status=status
-    state.updated_at=now
-    self.store:save_download_state(state)
-    self._download_state_last_write=now
-    self._download_state_last_stage=stage
+    return coordinator(self):write_state(status,patch,force)
 end
 function Plugin:_active_download_payload(runtime,state)
-    local task=(self.download_task and self.download_task:descriptor()) or runtime.task
-    return {
-        title=runtime.book and runtime.book.title or "未命名",
-        book_id=runtime.book and runtime.book.bookId or "",
-        book=U.copy(runtime.book or {}),
-        options=U.copy(runtime.options or {}),
-        background=runtime.background==true,
-        stage=state and state.stage or "prepare",
-        current=state and state.current or 0,
-        total=state and state.total or 0,
-        percent=state and state.percent or 0,
-        chapter=state and state.chapter or "",
-        message=state and state.message or "",
-        waiting_network=state and (state.waiting_network==true or state.stage=="waiting_network") or nil,
-        wait_seconds=state and state.wait_seconds or nil,
-        rate_limit_code=state and state.rate_limit_code or nil,
-        started_at=runtime.started_at,
-        task=U.copy(task),
-    }
+    local task_descriptor = self.download_task and self.download_task:descriptor()
+    return coordinator(self):active_payload(runtime,state,task_descriptor)
 end
 function Plugin:_close_download_dialog(reason)
     local runtime=self._download_runtime
@@ -888,36 +834,24 @@ function Plugin:_install_pending_downloads(notify)
 end
 
 function Plugin:_download_job_key(book,opt)
-    opt=opt or {}
-    local kind=opt.annotations and "notes" or "clean"
-    return table.concat({
-        tostring(book and book.bookId or ""),kind,tostring(opt.chapter_uid or "full"),
-        tostring(opt.limit or "all"),tostring(opt.range_start_index or ""),
-        tostring(opt.range_end_index or ""),
-    },":")
+    return coordinator(self):job_key(book,opt)
 end
 function Plugin:_queue_download(book,opt,open_after,extra)
     extra=type(extra)=="table" and extra or {}
-    local key=self:_download_job_key(book,opt)
-    local book_id=tostring(book and (book.bookId or book.book_id) or "")
-    local runtime=self._download_runtime
-    local runtime_id=tostring(runtime and runtime.book and (runtime.book.bookId or runtime.book.book_id) or "")
-    if runtime and ((book_id~="" and runtime_id==book_id) or self:_download_job_key(runtime.book,runtime.options)==key) then
+    local C=coordinator(self)
+    local duplicate=C:find_duplicate(book,opt,
+        self._download_runtime and self._download_runtime.book or nil,
+        self._download_runtime and self._download_runtime.options or nil)
+    if duplicate=="active" then
         self:info("这本书已经在下载中。\n\n请在下载管理中查看当前状态。")
         return false
     end
-    local queue=self.store:download_queue()
-    for _,job in ipairs(queue) do
-        local queued_id=tostring(job.book and (job.book.bookId or job.book.book_id) or "")
-        if (book_id~="" and queued_id==book_id) or tostring(job.key or "")==key then
-            self:info("这本书已经在等待下载。\n\n请在下载管理中查看或移除等待任务。")
-            return false
-        end
+    if duplicate=="queued" then
+        self:info("这本书已经在等待下载。\n\n请在下载管理中查看或移除等待任务。")
+        return false
     end
-    local job={key=key,book=U.copy(book or {}),options=U.copy(opt or {}),open_after=open_after==true,
-        queued_at=os.time(),defer_until_reader_closed=extra.defer_until_reader_closed==true or nil,
-        wait_reason=extra.reason}
-    local position,reason=self.store:enqueue_download(job)
+    local queue=self.store:download_queue()
+    local position,reason,job=C:enqueue(book,opt,open_after,extra)
     if not position then
         if reason=="full" then
             local waiting=queue[1] or {}
@@ -946,18 +880,15 @@ function Plugin:_queue_download(book,opt,open_after,extra)
     return true
 end
 function Plugin:_start_next_queued_download()
-    if self.download_task and self.download_task:busy() then return false end
-    if self._download_runtime then return false end
-    local state=self.store:download_state()
-    if state.status=="active" or state.status=="failed" or state.status=="interrupted" then
-        return false
-    end
-    if not self:is_online() or not self:logged_in() then return false end
-    local queue=self.store:download_queue()
-    local next_job=queue[1]
-    if not next_job then return false end
-    if next_job.defer_until_reader_closed==true and self:_active_reader_ui() then return false end
-    local job=self.store:dequeue_download()
+    local C=coordinator(self)
+    local ok_start,next_job=C:can_start_next(
+        self.download_task and self.download_task:busy(),
+        self._download_runtime~=nil,
+        self:is_online(),
+        self:logged_in(),
+        self:_active_reader_ui())
+    if not ok_start then return false end
+    local job=C:dequeue_next()
     if not job then return false end
     UIManager:scheduleIn(.15,function()
         self:download(job.book or {},job.options or {},job.open_after==true,nil,true,true)

@@ -149,7 +149,8 @@ class MainLuaStructureTests(unittest.TestCase):
         module_names = {
             "ActionSheet", "Access", "Annotations", "Api", "Async", "Auth",
             "Blitbuffer", "BookIntegrity", "CacheCleanupTask", "Config",
-            "Cookies", "DataMigration", "Device", "DownloadDatabase",
+            "Cookies", "DataMigration", "Device", "DownloadCoordinator",
+            "DownloadDatabase",
             "DownloadProgress", "DownloadResult", "DownloadTask", "Downloader",
             "EpubInstaller", "Event", "ExternalAnnotationsDB",
             "ExternalAnnotationSync", "FullShelfView", "GestureBridge",

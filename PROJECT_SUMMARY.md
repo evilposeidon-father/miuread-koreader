@@ -4,16 +4,16 @@
 
 ## 统计
 
-- 代码文件：129
-- 代码行数：约 65550
-- 主要语言：.lua 124、.py 4、.json 1
-- 项目大小：2909.2 KB
-- 最后更新：2026-08-16 02:20
-- 摘要生成时间：2026-08-16 02:21
+- 代码文件：131
+- 代码行数：约 65600
+- 主要语言：.lua 126、.py 4、.json 1
+- 项目大小：2910.8 KB
+- 最后更新：2026-08-16 02:23
+- 摘要生成时间：2026-08-16 02:25
 
 ## 文件清单（前 60）
 
-- `miuread.koplugin\main.lua`（11840 行）
+- `miuread.koplugin\main.lua`（11701 行）
 - `miuread.koplugin\miuread\sync.lua`（3492 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
 - `miuread.koplugin\miuread\store.lua`（2183 行）
@@ -72,4 +72,4 @@
 - `miuread.koplugin\miuread\data_migration.lua`（299 行）
 - `miuread.koplugin\miuread\thought_face_factory.lua`（299 行）
 - `miuread.koplugin\miuread\download_progress.lua`（298 行）
-- `tests\test_project_invariants.py`（291 行）
+- `tests\test_project_invariants.py`（295 行）
