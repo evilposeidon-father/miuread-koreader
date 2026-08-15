@@ -165,6 +165,18 @@ local function review_parts(row)
     return range, abstract, content, author_name
 end
 
+-- Remove MiuRead variant suffixes so "书名-纯净版" or
+-- "书名-划线与想法版" becomes searchable as the original book title.
+local function clean_book_keyword(path)
+    local name = tostring(path or "")
+    name = name:match("([^/]+)%.[^%.]+$") or name
+    name = name:gsub("%s+$", "")
+    name = name:gsub("%s*%-%s*[^%-]*版[^%-]*$", "")
+    name = name:gsub("%s+$", "")
+    name = name:gsub("%s*%-%s*$", "")
+    return name
+end
+
 function M.install(Plugin)
     for name, method in pairs(M) do
         if name ~= "install" and Plugin[name] == nil then
@@ -188,6 +200,46 @@ end
 
 function M:_external_annotations_visible()
     return self.store:preferences().external_annotations_visible ~= false
+end
+
+-- MiuRead-generated books already know their WeRead book id. Reuse it so a
+-- downloaded "书名-纯净版.epub" can bind automatically without searching.
+function M:_external_auto_bind_miuread_book()
+    local path = current_file(self)
+    if not path then return false end
+    local current = self.sync and self.sync:record() or self:_current_book_record()
+    local book = current and current.book
+    if not book then return false end
+    local book_id = tostring(book.book_id or book.bookId or "")
+    if book_id == "" then return false end
+
+    local entry = self.external_annotations_db:getDocument(path) or {}
+    local previous_id = entry.binding and tostring(entry.binding.book_id or "") or ""
+    if previous_id == book_id then return true end
+
+    entry.binding = {
+        book_id = book_id,
+        title = tostring(book.title or ""),
+        author = tostring(book.author or ""),
+        format = tostring(book.format or book.variant or ""),
+        bound_at = os.time(),
+        auto = true,
+    }
+    entry.records = {}
+    entry.stats = nil
+    entry.synced_at = nil
+    local saved, save_err = self.external_annotations_db:saveDocument(path, entry)
+    if not saved then
+        logger.warn("[MiuRead][ExternalAnnotations] auto bind save failed:", save_err)
+        return false
+    end
+    self.external_annotations_db:clearSyncCheckpoint(path)
+    if self._external_annotation_overlay then
+        self._external_annotation_overlay:setRecords({})
+    end
+    logger.info("[MiuRead][ExternalAnnotations] auto bound MiuRead book:",
+        "book_id=", book_id, "path=", tostring(path))
+    return true
 end
 
 function M:_setup_external_annotations()
@@ -336,10 +388,36 @@ function M:bind_external_annotations_book(touchmenu_instance)
     local path = current_file(self)
     if not path then return end
 
+    -- MiuRead downloaded books already know their WeRead book id; bind directly
+    -- instead of forcing the user to search a "书名-纯净版" style filename.
+    if self:_external_auto_bind_miuread_book() then
+        local entry = current_entry(self)
+        local title = entry and entry.binding and entry.binding.title or ""
+        if touchmenu_instance and type(touchmenu_instance.updateItems) == "function" then
+            touchmenu_instance:updateItems()
+        end
+        UIManager:show(ConfirmBox:new{
+            title = "已自动匹配",
+            text = "已根据当前觅阅书籍自动匹配《" .. tostring(title ~= "" and title or "微信读书书籍")
+                .. "》。\n\n现在同步划线与想法吗？\n\n你可以随时取消；已下载的进度会自动保存，下次继续。",
+            ok_text = "同步划线与想法",
+            cancel_text = "稍后",
+            ok_callback = function()
+                self:sync_external_annotations()
+            end,
+        })
+        return
+    end
+
+    local current = self.sync and self.sync:record() or self:_current_book_record()
+    local fallback_input = current and current.book and tostring(current.book.title or "")
+        or clean_book_keyword(path)
+    if fallback_input == "" then fallback_input = path:match("([^/]+)%.[^%.]+$") or path end
+
     local dialog
     dialog = InputDialog:new{
         title = "匹配微信读书书籍",
-        input = path:match("([^/]+)%.[^%.]+$") or path,
+        input = fallback_input,
         input_type = "text",
         buttons = { { {
             text = "取消",
@@ -425,15 +503,18 @@ end
 
 function M:sync_external_annotations()
     local path = current_file(self)
-    local entry = current_entry(self)
     if not path then return end
-    if not entry or not entry.binding then
-        self:info("请先把本地书匹配到微信读书书籍。")
-        return
-    end
     if not self:logged_in() then
         self:info("请先登录微信读书账号。")
         return
+    end
+    local entry = current_entry(self)
+    if not entry or not entry.binding then
+        -- MiuRead downloaded books are auto-bound from the known WeRead id.
+        if not self:_external_auto_bind_miuread_book() then
+            self:info("请先把本地书匹配到微信读书书籍。")
+            return
+        end
     end
     if self._external_annotation_sync then
         self:toast("划线与想法同步正在进行", 2)
