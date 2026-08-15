@@ -33,6 +33,9 @@ function T.test_load_main_and_controllers()
     test_method(plugin, "_begin_koreader_exit")
     test_method(plugin, "_reader_file")
     test_method(plugin, "return_to_miuread_home")
+    test_method(plugin, "_guard_native_koreader_menu")
+    test_method(plugin, "onReaderReady")
+    test_method(plugin, "onSetDimensions")
 end
 
 function T.test_load_lazy_ui_modules()

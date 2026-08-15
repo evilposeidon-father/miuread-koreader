@@ -6,18 +6,27 @@ local UIManager = require("ui/uimanager")
 local logger = require("logger")
 local Session = require("miuread.session_state")
 local HomeView = require("miuread.home_view")
+local Device = require("device")
+local U = require("miuread.util")
+local HomeData = require("miuread.home_data")
+local Lazy = require("miuread.lazy")
+local ReaderToolbar = Lazy("miuread.reader_toolbar")
 local ReaderTransitionGuard = require("miuread.reader_transition_guard")
 
 local HOME_SESSION = Session.home()
 local NAVIGATION = Session.navigation()
 local NAVIGATION_STATES = Session.NAVIGATION_STATES
 local READER_CLOSE = Session.reader_close()
+local READER_REBUILD = Session.reader_rebuild()
 
 local function navigation_state_from_foreground(owner)
     return Session.navigation_state_from_foreground(owner)
 end
 local function reader_close_active()
     return Session.reader_close_active()
+end
+local function reader_rebuild_active()
+    return Session.reader_rebuild_active()
 end
 local function normalized_reader_file(path)
     return Session.normalized_reader_file(path)
@@ -1065,6 +1074,271 @@ function Plugin:return_to_miuread_home(reason)
     return true
 end
 
+
+
+-- Reader-ready and dimension commits complete the lifecycle controller.
+
+function Plugin:onReaderReady()
+    HOME_SESSION.home_restore_generation=(tonumber(HOME_SESSION.home_restore_generation) or 0)+1
+    HOME_SESSION.home_restore_active=false
+
+    local ready_path=normalized_reader_file(self:_current_document_path())
+    -- If the same Reader unexpectedly reappears while an explicit Home return
+    -- is already in progress, do not cancel that user request. Close the
+    -- transiently recreated Reader again and keep the existing close watchdog.
+    if reader_close_active() and HOME_SESSION.return_requested==true
+        and ready_path and normalized_reader_file(READER_CLOSE.reader_file)==ready_path then
+        logger.warn("[MiuRead][Lifecycle] reader reappeared during explicit return",
+            "generation=",tostring(READER_CLOSE.generation),"book=",tostring(ready_path))
+        READER_CLOSE.state="reader_closing"
+        READER_CLOSE.close_event_received=false
+        self:_set_foreground("reader_transition")
+        self:_ensure_reader_transition_guard("reader reappeared during explicit return")
+        self:_schedule_reader_return_finish(READER_CLOSE.generation,.08,"reader reappeared")
+        UIManager:nextTick(function()
+            if reader_close_active() and HOME_SESSION.return_requested==true then
+                self:_request_reader_close(READER_CLOSE.generation,"reappeared during explicit return")
+            end
+        end)
+        return
+    end
+
+    local had_candidate,preserve_session=self:_reader_rebuild_ready_state()
+    self:_cancel_reader_close_settle("reader ready")
+    if READER_CLOSE.state~="idle" then
+        self:_clear_reader_return(READER_CLOSE.generation,"reader ready cancelled stale return")
+        self:_finish_page_transition(1.0,"reader ready")
+    elseif not preserve_session then
+        HOME_SESSION.return_requested=false
+        HOME_SESSION.return_session_generation=0
+        HOME_SESSION.return_request_file=nil
+    end
+    if not preserve_session then
+        HOME_SESSION.reader_session_generation=(tonumber(HOME_SESSION.reader_session_generation) or 0)+1
+    end
+    HOME_SESSION.reader_session_active=true
+    HOME_SESSION.reader_session_file=ready_path
+    self._reader_session_generation=HOME_SESSION.reader_session_generation
+    local ready_session=self._reader_session_generation
+    self._home_reader_transition=false
+    self:_close_reader_recovery_surface()
+    self:_close_home_for_reader("reader ready")
+    self:_ensure_reader_transition_guard("reader ready")
+    if self._reader_active_path then U.atomic_write(self._reader_active_path,"1",true) end
+    -- Give EPUB opening and the first visible page priority over background
+    -- work, but do not keep cloud/state workers blocked for a fixed eight
+    -- seconds. Three seconds is enough to protect the first interactions; the
+    -- idle gate below keeps extending the delay while the user is active.
+    self:_mark_reader_busy(3)
+    logger.info("[MiuRead][Sync] reader ready","session=",tostring(self._reader_session_generation or 0),
+        "rebuild=",tostring(had_candidate==true),"preserved=",tostring(preserve_session==true))
+    -- ReaderUI already paints its first page. Avoid a second forced full-screen
+    -- refresh, which was the visible extra flash after opening a book.
+    self:_finish_page_transition(1.2,"reader first page")
+    UIManager:scheduleIn(.05,function()
+        if not (self.ui and self.ui.document)
+            or tonumber(HOME_SESSION.reader_session_generation or 0)~=ready_session
+            or reader_close_active() then return end
+        self:_install_reader_menu_bridge()
+        self:_install_reader_quick_panel_zone()
+        HOME_SESSION.opening_file=nil
+        HOME_SESSION.opening_at=0
+        local path=self:_current_document_path()
+        local book,record,variant
+        if path then
+            book,record,variant=self.store:identify_file(path,false)
+            self:_record_recent_read(path,book,record)
+        end
+        if record and (record.annotation_requested==true or tostring(variant or record.variant or ""):find("notes",1,true)) then
+            self:_setup_thought_tap()
+            logger.info("[MiuRead][ThoughtPopup] local tap ready before cloud sync")
+        end
+        local pending=HOME_SESSION.pending_annotation_jump
+        if type(pending)=="table" then
+            local age=os.time()-(tonumber(pending.requested_at) or 0)
+            if age<0 or age>45 then
+                HOME_SESSION.pending_annotation_jump=nil
+            else
+                local current_id=book and tostring(book.book_id or book.bookId or "") or ""
+                local same_book=current_id~="" and current_id==tostring(pending.book_id or "")
+                local same_file=normalized_reader_file(path)==normalized_reader_file(pending.source_path)
+                if same_book or same_file then
+                    HOME_SESSION.pending_annotation_jump=nil
+                    UIManager:scheduleIn(.16,function()
+                        if not (self.ui and self.ui.document) or reader_close_active() then return end
+                        self:_reader_goto_annotation(pending)
+                        if pending.manage==true then
+                            UIManager:scheduleIn(.14,function()
+                                local item=self:_annotation_find_reader_item(pending)
+                                if item then
+                                    local kind=self:_reader_annotation_type(item)
+                                    self:_show_reader_annotation_actions(item,kind,nil,function()
+                                        self:_show_reader_records(self:_reader_annotation_type(item) or kind,function() self:show_reader_quick_panel() end)
+                                    end)
+                                else
+                                    self:toast("已跳到批注位置；当前记录暂时无法直接编辑",2)
+                                end
+                            end)
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+    -- Prime only lightweight page/chapter data. No toolbar widget survives a
+    -- close or page turn; every visible panel is created fresh and destroyed.
+    ReaderToolbar.invalidate()
+    self:_reset_reader_toolbar_state_cache()
+    self:_schedule_reader_toolbar_state_refresh(nil,.35)
+    self:_schedule_reader_toolbar_prewarm(ready_session,1.1)
+    self:_teardown_thought_tap()
+    self:_teardown_external_annotations()
+    self:_setup_external_annotations()
+    self._progress_prompted_book_id=nil
+    self._progress_check_running=false
+    self._progress_remote_retries={}
+    self._sync_success_notified=false
+    self._last_progress_submit_notice=nil
+    if self._reader_sync_ready_task then
+        UIManager:unschedule(self._reader_sync_ready_task)
+        self._reader_sync_ready_task=nil
+    end
+    local task
+    task=function()
+        if self._reader_sync_ready_task~=task then return end
+        if not self:_reader_background_idle() then
+            UIManager:scheduleIn(.65,task)
+            return
+        end
+        self._reader_sync_ready_task=nil
+        if self.ui and self.ui.document
+            and tonumber(HOME_SESSION.reader_session_generation or 0)==ready_session
+            and not reader_close_active() then self.sync:on_reader_ready() end
+    end
+    self._reader_sync_ready_task=task
+    -- Let KOReader paint the first page and restore input before identity and
+    -- cloud-progress work begins. Local comment taps are already installed by
+    -- the next-tick block above, so this does not delay reading interaction.
+    UIManager:scheduleIn(.60,task)
+    local device_task
+    device_task=function()
+        if self._miuread_suspended==true or HOME_SESSION.suspended==true then return end
+        if not (self.ui and self.ui.document) or reader_close_active()
+            or tonumber(HOME_SESSION.reader_session_generation or 0)~=ready_session then return end
+        if not self:_reader_background_idle() then UIManager:scheduleIn(.75,device_task); return end
+        HomeData.quick_device_state(true)
+    end
+    UIManager:scheduleIn(1.8,device_task)
+    if had_candidate then
+        UIManager:scheduleIn(.18,function()
+            if self.ui and self.ui.document
+                and tonumber(HOME_SESSION.reader_session_generation or 0)==ready_session
+                and not reader_close_active() then self:onSetDimensions() end
+        end)
+    end
+end
+
+function Plugin:onSetDimensions()
+    local now=monotonic_wall_time()
+    HOME_SESSION.last_dimension_event_clock=now
+    self._reader_dimension_last_event_clock=now
+    self._reader_dimension_event_count=(tonumber(self._reader_dimension_event_count) or 0)+1
+    local sw,sh=Device.screen:getWidth(),Device.screen:getHeight()
+    local rotation=Device.screen.getRotationMode and Device.screen:getRotationMode() or nil
+
+    if HOME_SESSION.suspended==true or self._miuread_suspended==true then
+        READER_REBUILD.pending_width,READER_REBUILD.pending_height=sw,sh
+        READER_REBUILD.pending_rotation=rotation
+        return true
+    end
+    if reader_close_active() then
+        HOME_SESSION.pending_dimension_width=sw
+        HOME_SESSION.pending_dimension_height=sh
+        HOME_SESSION.pending_dimension_rotation=rotation
+        logger.info("[MiuRead][Rotation] deferred during reader close",
+            "state=",tostring(READER_CLOSE.state),"size=",tostring(sw).."x"..tostring(sh))
+        return true
+    end
+    if reader_rebuild_active() then
+        READER_REBUILD.pending_width,READER_REBUILD.pending_height=sw,sh
+        READER_REBUILD.pending_rotation=rotation
+        logger.info("[MiuRead][Rotation] deferred during reader rebuild",
+            "size=",tostring(sw).."x"..tostring(sh))
+        return true
+    end
+
+    if not (self.ui and self.ui.document) then
+        -- HomeWidget owns Home geometry. Avoid a second plugin-level rebuild.
+        return true
+    end
+
+    self:_set_foreground("reader")
+    self._reader_dimension_generation=(tonumber(self._reader_dimension_generation) or 0)+1
+    local generation=self._reader_dimension_generation
+    local event_count=self._reader_dimension_event_count
+    if self._reader_dimension_task then
+        UIManager:unschedule(self._reader_dimension_task)
+        self._reader_dimension_task=nil
+    end
+    logger.info("[MiuRead][Rotation] event","generation=",tostring(generation),
+        "size=",tostring(sw).."x"..tostring(sh),"rotation=",tostring(rotation))
+
+    local last_w,last_h,last_rotation,stable,attempts=nil,nil,nil,0,0
+    local task
+    task=function()
+        if self._reader_dimension_task~=task or generation~=self._reader_dimension_generation then return end
+        if HOME_SESSION.suspended==true or self._miuread_suspended==true then
+            self._reader_dimension_task=nil
+            return
+        end
+        if reader_close_active() or reader_rebuild_active() then
+            self._reader_dimension_task=nil
+            HOME_SESSION.pending_dimension_width=Device.screen:getWidth()
+            HOME_SESSION.pending_dimension_height=Device.screen:getHeight()
+            HOME_SESSION.pending_dimension_rotation=Device.screen.getRotationMode and Device.screen:getRotationMode() or nil
+            return
+        end
+        attempts=attempts+1
+        local cw,ch=Device.screen:getWidth(),Device.screen:getHeight()
+        local cr=Device.screen.getRotationMode and Device.screen:getRotationMode() or nil
+        if cw==last_w and ch==last_h and cr==last_rotation then
+            stable=stable+1
+        else
+            last_w,last_h,last_rotation,stable=cw,ch,cr,0
+        end
+        if stable<2 and attempts<8 then
+            UIManager:scheduleIn(.12,task)
+            return
+        end
+        self._reader_dimension_task=nil
+        if not (self.ui and self.ui.document) then return end
+        local changed=cw~=self._reader_dimension_width or ch~=self._reader_dimension_height
+            or cr~=self._reader_dimension_rotation
+        self._reader_dimension_width,self._reader_dimension_height=cw,ch
+        self._reader_dimension_rotation=cr
+        if changed then
+            self:_close_miuread_transients()
+            ReaderToolbar.invalidate()
+            self:_reset_reader_toolbar_state_cache()
+            self:_schedule_reader_toolbar_state_refresh(nil,.10)
+            -- Menu method bridges are geometry-independent; only the gesture
+            -- zone needs to be rebound after a real size commit.
+            self:_install_reader_quick_panel_zone()
+            local reader=self:_active_reader_ui()
+            UIManager:setDirty(reader or nil,"full")
+        end
+        logger.info("[MiuRead][Rotation] committed",
+            "generation=",tostring(generation),"coalesced=",tostring(math.max(1,(tonumber(self._reader_dimension_event_count) or event_count)-event_count+1)),
+            "samples=",tostring(attempts),"changed=",tostring(changed),
+            "size=",tostring(cw).."x"..tostring(ch),"rotation=",tostring(cr))
+    end
+    self._reader_dimension_task=task
+    UIManager:scheduleIn(.30,task)
+    return true
+end
+
+function Plugin:onScreenResize() return self:onSetDimensions() end
+function Plugin:onRotation() return self:onSetDimensions() end
 
 
 local M = {}
