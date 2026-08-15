@@ -224,6 +224,7 @@ class MainLuaStructureTests(unittest.TestCase):
         sessions = read_text("miuread.koplugin/miuread/store_sessions.lua")
         library = read_text("miuread.koplugin/miuread/store_library.lua")
         pending = read_text("miuread.koplugin/miuread/store_pending.lua")
+        identity = read_text("miuread.koplugin/miuread/store_identity.lua")
         defaults = read_text("miuread.koplugin/miuread/store_defaults.lua")
         for var, module in [
             ("StoreDownloads", "store_downloads"),
@@ -231,6 +232,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("StoreSessions", "store_sessions"),
             ("StoreLibrary", "store_library"),
             ("StorePending", "store_pending"),
+            ("StoreIdentity", "store_identity"),
         ]:
             self.assertIn(f'local {var}=require("miuread.{module}")', store)
         self.assertNotIn("function Store:download_state(", store)
@@ -250,6 +252,8 @@ class MainLuaStructureTests(unittest.TestCase):
             self.assertIn(f"function StoreLibrary:{method}(", library)
         for method in ["pending_installs", "add_pending_install", "prune_pending_installs", "mark_read_report_consumed"]:
             self.assertIn(f"function StorePending:{method}(", pending)
+        for method in ["epub_identity_light", "epub_identity", "file_record_fast", "file_record_from_identity", "identify_file", "file_record"]:
+            self.assertIn(f"function StoreIdentity:{method}(", identity)
 
     def test_home_order_mirrors_stay_in_sync(self):
         main = read_text("miuread.koplugin/main.lua")

@@ -4,20 +4,20 @@
 
 ## 统计
 
-- 代码文件：143
-- 代码行数：约 66379
-- 主要语言：.lua 138、.py 4、.json 1
-- 项目大小：2942.4 KB
-- 最后更新：2026-08-16 02:54
-- 摘要生成时间：2026-08-16 02:55
+- 代码文件：146
+- 代码行数：约 66506
+- 主要语言：.lua 141、.py 4、.json 1
+- 项目大小：2947.4 KB
+- 最后更新：2026-08-16 02:58
+- 摘要生成时间：2026-08-16 03:01
 
 ## 文件清单（前 60）
 
 - `miuread.koplugin\main.lua`（11701 行）
 - `miuread.koplugin\miuread\sync.lua`（3492 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
-- `miuread.koplugin\miuread\store.lua`（1999 行）
 - `miuread.koplugin\miuread\downloader.lua`（1840 行）
+- `miuread.koplugin\miuread\store.lua`（1784 行）
 - `miuread.koplugin\miuread\plugin_download.lua`（1774 行）
 - `miuread.koplugin\miuread\thought_native_popup.lua`（1458 行）
 - `miuread.koplugin\miuread\annotation_sync.lua`（1294 行）
@@ -65,8 +65,8 @@
 - `miuread.koplugin\miuread\cache_cleanup_task.lua`（354 行）
 - `miuread.koplugin\miuread\plugin_thought_popup.lua`（342 行）
 - `miuread.koplugin\miuread\reader_typography_dialog.lua`（331 行）
+- `tests\test_project_invariants.py`（330 行）
 - `miuread.koplugin\miuread\auth.lua`（321 行）
-- `tests\test_project_invariants.py`（317 行）
 - `miuread.koplugin\miuread\book_integrity.lua`（316 行）
 - `miuread.koplugin\miuread\epub.lua`（305 行）
 - `miuread.koplugin\miuread\local_library.lua`（304 行）

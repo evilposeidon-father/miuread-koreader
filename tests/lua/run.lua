@@ -26,6 +26,7 @@ local suites = {
     "test_store_downloads",
     "test_store_auth_sessions",
     "test_store_library_pending",
+    "test_store_identity",
     "test_smoke",
 }
 

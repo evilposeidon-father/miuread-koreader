@@ -5,6 +5,7 @@ local U = require("miuread.util")
 local StoreLibrary = {}
 
 local function basename(path) return tostring(path or ""):match("([^/]+)$") end
+StoreLibrary.basename = basename
 function StoreLibrary:library() return self:get("library",{}) end
 function StoreLibrary:book(id) return self:library()[tostring(id)] end
 function StoreLibrary:save_book(id,patch)
