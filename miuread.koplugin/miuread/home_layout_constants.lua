@@ -37,6 +37,17 @@ M.HOME_PANEL_ITEM_ORDER = {"wifi","bluetooth","rotate","screenshot","full_refres
 M.HOME_PANEL_ITEM_DEFAULT = {wifi=true,bluetooth=true,rotate=true,screenshot=true,full_refresh=true,koreader_settings=true,return_koreader=true,quit=true,sync=true,miuread_settings=false,downloads=false,restart=false,sleep=false}
 M.HOME_PANEL_LAYOUT_VERSION = 3
 
+M.HOME_SOURCE_LABELS = {account="微信书架",generated="已下载",["local"]="本地书籍",mp="公众号"}
+M.HOME_ACTION_LABELS = {
+    refresh="更新",search="搜索",downloads="下载",sync="同步",sleep="休眠",
+    miuread_settings="觅阅设置",all_books="全部书籍",history="阅读历史",file_manager="文件管理",screenshot="截图",
+}
+M.HOME_PANEL_LABELS = {
+    wifi="Wi-Fi",bluetooth="蓝牙",rotate="方向锁定",screenshot="截图",koreader_settings="KOReader 设置",
+    return_koreader="返回 KOReader",quit="退出 KO",frontlight="前光",sync="同步",
+    miuread_settings="觅阅设置",downloads="下载",restart="重启 KOReader",sleep="休眠",full_refresh="全屏刷新",
+}
+
 M.RUNTIME_MODE_KEY = "__MIUREAD_RUNTIME_MODE"
 
 function M.quick_boolean_layout_matches(actual, expected, order)

@@ -205,7 +205,7 @@ function Plugin:_toggle_home_auto_hide_empty()
     self:_refresh_home_view(nil,"content")
 end
 
-local HOME_SOURCE_LABELS={account="微信书架",generated="已下载",["local"]="本地书籍",mp="公众号"}
+local HOME_SOURCE_LABELS = HomeLayouts.HOME_SOURCE_LABELS
 
 function Plugin:_home_move_source(key,delta)
     local home,preferences=self:_home_preferences()
@@ -273,15 +273,9 @@ function Plugin:home_source_settings_menu()
     return rows
 end
 
-local HOME_ACTION_LABELS={
-    refresh="更新",search="搜索",downloads="下载",sync="同步",sleep="休眠",
-    miuread_settings="觅阅设置",all_books="全部书籍",history="阅读历史",file_manager="文件管理",screenshot="截图",
-}
-local HOME_PANEL_LABELS={
-    wifi="Wi-Fi",bluetooth="蓝牙",rotate="方向锁定",screenshot="截图",koreader_settings="KOReader 设置",
-    return_koreader="返回 KOReader",quit="退出 KO",frontlight="前光",sync="同步",
-    miuread_settings="觅阅设置",downloads="下载",restart="重启 KOReader",sleep="休眠",full_refresh="全屏刷新",
-}
+local HOME_SOURCE_LABELS = HomeLayouts.HOME_SOURCE_LABELS
+local HOME_ACTION_LABELS = HomeLayouts.HOME_ACTION_LABELS
+local HOME_PANEL_LABELS = HomeLayouts.HOME_PANEL_LABELS
 
 function Plugin:_home_toggle_group_item(group,key)
     local home,preferences=self:_home_preferences()

@@ -140,6 +140,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginHome", "plugin_home.lua", ["_home_preferences", "_home_begin_resume", "home_mode_menu", "_home_schedule_cover_derivatives"]),
             ("PluginHomeCustomize", "plugin_home_customize.lua", ["home_customization_menu", "home_source_order_menu", "_home_group_settings_menu"]),
             ("PluginUiMenus", "plugin_ui_menus.lua", ["_show_miuread_menu", "_show_home_bubble_menu", "notice_settings_menu"]),
+            ("PluginHomeContent", "plugin_home_content.lua", ["_home_all_rows", "show_home_local_library", "_home_scan_local", "_show_miuread_home_now"]),
         ]:
             module_path = f"miuread.koplugin/miuread/{file_name}"
             self.assertIn(f'local {module_name}=require("miuread.{file_name[:-4]}")', main)
@@ -223,6 +224,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "plugin_home.lua",
             "plugin_home_customize.lua",
             "plugin_ui_menus.lua",
+            "plugin_home_content.lua",
         ]:
             text = read_text(f"miuread.koplugin/miuread/{name}")
             declared = set(re.findall(r'^local\s+(\w+)\s*=\s*(?:require|Lazy|gesture_aware_class)\(', text, re.M))
