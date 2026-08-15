@@ -10,6 +10,9 @@ local Config = require("miuread.config")
 local U = require("miuread.util")
 local Text = require("miuread.text")
 local HomeData = require("miuread.home_data")
+local HomeView = require("miuread.home_view")
+local HomeQuickPanel = require("miuread.home_quick_panel")
+local ActionSheet = require("miuread.action_sheet")
 local LocalAnnotationDatabase = require("miuread.local_annotation_database")
 local Orientation = require("miuread.orientation_controller")
 local Lazy = require("miuread.lazy")
@@ -25,6 +28,7 @@ local ReaderTypographyDialog = Lazy("miuread.reader_typography_dialog")
 local ReaderTocDialog = Lazy("miuread.reader_toc_dialog")
 local ReaderFrontlightDialog = Lazy("miuread.reader_frontlight_dialog")
 local ThoughtNativePopup = Lazy("miuread.thought_native_popup")
+local ScreenshotMode = Lazy("miuread.screenshot_mode")
 
 local _ = Text.tr
 

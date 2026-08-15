@@ -9,7 +9,8 @@
 ## 4.5.24 - 2026-08-16
 
 - 架构 继续拆分 `main.lua` 控制器：新增 `miuread.plugin_update`（更新与关于）、`miuread.plugin_sync`（进度/时间同步）、`miuread.plugin_download`（下载与存储清理）、`miuread.plugin_reader`（阅读快捷面板与阅读控制），统一沿用 `install(Plugin)` 模式；`main.lua` 从约 20697 行降至约 14430 行。
-- 测试 结构回归测试新增四个拆分控制器的安装与关键方法归属检查，懒加载模块检查改为跨控制器汇总。
+- 修复 补齐拆分控制器缺失的局部 require（下载：Http/lfs/TransientGuard/ActionSheet；阅读：HomeView/HomeQuickPanel/ActionSheet/ScreenshotMode），修复真机打开书籍时因 nil 全局调用直接崩溃闪退的问题。
+- 测试 结构回归测试新增四个拆分控制器的安装与关键方法归属检查、控制器依赖声明守卫，懒加载模块检查改为跨控制器汇总。
 
 ## 4.5.23 - 2026-08-15
 

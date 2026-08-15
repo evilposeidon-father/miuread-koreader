@@ -4,8 +4,12 @@
 -- stay in main.lua because they mutate the shared home-session locals there.
 local UIManager = require("ui/uimanager")
 local logger = require("logger")
+local lfs = require("libs/libkoreader-lfs")
 local U = require("miuread.util")
 local Text = require("miuread.text")
+local Http = require("miuread.http")
+local TransientGuard = require("miuread.transient_guard")
+local ActionSheet = require("miuread.action_sheet")
 local HomeView = require("miuread.home_view")
 local HomeData = require("miuread.home_data")
 local DownloadProgress = require("miuread.download_progress")

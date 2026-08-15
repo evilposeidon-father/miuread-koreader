@@ -134,6 +134,73 @@ class MainLuaStructureTests(unittest.TestCase):
             for method in methods:
                 self.assertIn(f"function Plugin:{method}(", module)
 
+    def test_split_controllers_declare_used_modules(self):
+        # The controllers moved code out of main.lua but kept the original
+        # lexical references. A missing require becomes a nil global on the
+        # device (immediate crash), so guard the require surface explicitly.
+        module_names = {
+            "ActionSheet", "Access", "Annotations", "Api", "Async", "Auth",
+            "Blitbuffer", "BookIntegrity", "CacheCleanupTask", "Config",
+            "Cookies", "DataMigration", "Device", "DownloadDatabase",
+            "DownloadProgress", "DownloadResult", "DownloadTask", "Downloader",
+            "EpubInstaller", "Event", "ExternalAnnotationsDB",
+            "ExternalAnnotationSync", "FullShelfView", "GestureBridge",
+            "HomeData", "HomeQuickPanel", "HomeView", "Http", "InputDialog",
+            "Json", "Lazy", "Library", "LocalAnnotationDatabase",
+            "LocalBrowserView", "LocalLibrary", "LocalMetadata", "MemoryMode",
+            "Menu", "MigrationProgress", "MP", "NetworkMetadata", "Orientation",
+            "PathChooser", "PerformanceMode", "PluginMenu", "PluginSettings",
+            "Protocol", "Reader", "ReaderControlCenter", "ReaderFrontlightDialog",
+            "ReaderListDialog", "ReaderProgressDialog", "ReaderSettingsDialog",
+            "ReaderTocDialog", "ReaderToolbar", "ReaderTypographyDialog",
+            "ScreenshotMode", "ShelfView", "StatusToast", "Store", "Sync",
+            "Text", "ThoughtNativePopup", "Thoughts", "TimeZone",
+            "TransientGuard", "U", "UIManager", "UiScale", "Updater", "WidgetContainer",
+            "lfs", "logger",
+        }
+
+        def code_only(text):
+            out = []
+            i, n = 0, len(text)
+            while i < n:
+                if text[i:i + 2] == "--":
+                    j = text.find("\n", i)
+                    if j == -1:
+                        break
+                    out.append("\n")
+                    i = j + 1
+                    continue
+                if text[i] in "'\"":
+                    quote = text[i]
+                    i += 1
+                    while i < n:
+                        if text[i] == "\\":
+                            i += 2
+                            continue
+                        if text[i] == quote:
+                            i += 1
+                            break
+                        i += 1
+                    out.append(" ")
+                    continue
+                out.append(text[i])
+                i += 1
+            return "".join(out)
+
+        for name in [
+            "plugin_maintenance.lua",
+            "plugin_update.lua",
+            "plugin_sync.lua",
+            "plugin_download.lua",
+            "plugin_reader.lua",
+        ]:
+            text = read_text(f"miuread.koplugin/miuread/{name}")
+            declared = set(re.findall(r'^local\s+(\w+)\s*=\s*(?:require|Lazy|gesture_aware_class)\(', text, re.M))
+            code = code_only(text)
+            used = {n for n in module_names if re.search(rf"\b{n}\b", code)}
+            missing = sorted(used - declared)
+            self.assertEqual([], missing, f"{name} uses modules without require: {missing}")
+
     def test_reader_panel_base_usage(self):
         dialogs = [
             "reader_toc_dialog.lua",
