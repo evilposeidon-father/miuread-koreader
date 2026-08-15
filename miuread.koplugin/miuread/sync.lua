@@ -11,6 +11,7 @@ local ReadReportWorker = require("miuread.legacy_adapter_worker")
 local BookIntegrity = require("miuread.book_integrity")
 local PrecisePosition = require("miuread.precise_position")
 local SourcePosition = require("miuread.source_position")
+local ProgressDecision = require("miuread.progress_decision")
 local U = require("miuread.util")
 
 local Sync = {}
@@ -2133,11 +2134,8 @@ function Sync:test_upload(callback)
 end
 
 function Sync:compare(local_percent, remote)
-    if not remote then return "unknown" end
-    local delta = (tonumber(remote.percent) or 0) - (tonumber(local_percent) or 0)
     local threshold = tonumber(self.store:preferences().sync.threshold) or 2
-    if math.abs(delta) <= threshold then return "same" end
-    return delta > 0 and "remote_ahead" or "local_ahead"
+    return ProgressDecision.compare(local_percent, remote, threshold)
 end
 
 function Sync:jump(percent)

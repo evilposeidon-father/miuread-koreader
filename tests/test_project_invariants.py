@@ -225,6 +225,7 @@ class MainLuaStructureTests(unittest.TestCase):
         library = read_text("miuread.koplugin/miuread/store_library.lua")
         pending = read_text("miuread.koplugin/miuread/store_pending.lua")
         identity = read_text("miuread.koplugin/miuread/store_identity.lua")
+        meta = read_text("miuread.koplugin/miuread/store_meta.lua")
         defaults = read_text("miuread.koplugin/miuread/store_defaults.lua")
         for var, module in [
             ("StoreDownloads", "store_downloads"),
@@ -233,6 +234,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("StoreLibrary", "store_library"),
             ("StorePending", "store_pending"),
             ("StoreIdentity", "store_identity"),
+            ("StoreMeta", "store_meta"),
         ]:
             self.assertIn(f'local {var}=require("miuread.{module}")', store)
         self.assertNotIn("function Store:download_state(", store)
@@ -240,6 +242,7 @@ class MainLuaStructureTests(unittest.TestCase):
         self.assertNotIn("function Store:auth()", store)
         self.assertNotIn("function Store:save_book(", store)
         self.assertNotIn("function Store:add_pending_install(", store)
+        self.assertNotIn("function Store:shelf_cache(", store)
         self.assertNotIn("local defaults={", store)
         self.assertIn("local defaults={", defaults)
         for method in ["download_state", "save_download_state", "download_queue", "enqueue_download", "dequeue_download"]:
@@ -254,6 +257,8 @@ class MainLuaStructureTests(unittest.TestCase):
             self.assertIn(f"function StorePending:{method}(", pending)
         for method in ["epub_identity_light", "epub_identity", "file_record_fast", "file_record_from_identity", "identify_file", "file_record"]:
             self.assertIn(f"function StoreIdentity:{method}(", identity)
+        for method in ["mark_last_read", "recent_reads", "record_recent_read", "shelf_cache", "update_cached_progress", "cover_guard", "cover_path"]:
+            self.assertIn(f"function StoreMeta:{method}(", meta)
 
     def test_home_order_mirrors_stay_in_sync(self):
         main = read_text("miuread.koplugin/main.lua")

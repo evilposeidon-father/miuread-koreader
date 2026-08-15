@@ -64,6 +64,16 @@ function ProgressDecision.upload_failure(session, sync_last_error_kind)
     return repair, kind, state
 end
 
+-- Classifies the local/remote progress comparison used by sync:compare.
+-- Returns "unknown"|"same"|"remote_ahead"|"local_ahead".
+function ProgressDecision.compare(local_percent, remote, threshold)
+    if not remote then return "unknown" end
+    local delta = (tonumber(remote.percent) or 0) - (tonumber(local_percent) or 0)
+    threshold = tonumber(threshold) or 2
+    if math.abs(delta) <= threshold then return "same" end
+    return delta > 0 and "remote_ahead" or "local_ahead"
+end
+
 -- Decides whether the local position and the fetched remote position are
 -- aligned. Returns action ("aligned"|"different"), coordinate_match,
 -- remote percent, matched remote percent, source and match metadata.

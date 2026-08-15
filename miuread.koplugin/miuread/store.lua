@@ -13,12 +13,14 @@ local StoreSessions=require("miuread.store_sessions")
 local StoreLibrary=require("miuread.store_library")
 local StorePending=require("miuread.store_pending")
 local StoreIdentity=require("miuread.store_identity")
+local StoreMeta=require("miuread.store_meta")
 for name,func in pairs(StoreDownloads) do Store[name]=func end
 for name,func in pairs(StoreAuth) do if type(func)=="function" then Store[name]=func end end
 for name,func in pairs(StoreSessions) do if type(func)=="function" then Store[name]=func end end
 for name,func in pairs(StoreLibrary) do if type(func)=="function" then Store[name]=func end end
 for name,func in pairs(StorePending) do if type(func)=="function" then Store[name]=func end end
 for name,func in pairs(StoreIdentity) do if type(func)=="function" then Store[name]=func end end
+for name,func in pairs(StoreMeta) do if type(func)=="function" then Store[name]=func end end
 local defaults=require("miuread.store_defaults")
 local function settings_file_valid(path)
     if not path or lfs.attributes(path,"mode")~="file" then return false,"missing" end
@@ -1341,67 +1343,6 @@ function Store:mp_root() U.mkdir(self.mp_dir); return self.mp_dir end
 function Store:book_dir(id) local p=self:book_cache_path(id); U.mkdir(p); return p end
 function Store:epub_path(filename) local p=self:epub_root().."/"..tostring(filename); U.mkdir(self:epub_root()); return p end
 
-function Store:mark_last_read(id,path,progress,flush_now,at)
-    id=tostring(id or "")
-    if id=="" then return end
-    local patch={last_read_at=tonumber(at) or os.time()}
-    if path then patch.last_read_path=path end
-    if progress~=nil then patch.progress_local_percent=tonumber(progress) end
-    self:save_session(id,patch,flush_now)
-end
-function Store:recent_reads()
-    local state=self:get("recent_reads",{version=1,items={}})
-    if type(state)~="table" then state={version=1,items={}} end
-    state.version=1
-    if type(state.items)~="table" then state.items={} end
-    return state
-end
-function Store:record_recent_read(book_id,path,at)
-    book_id=tostring(book_id or "")
-    path=tostring(path or "")
-    if book_id=="" and path=="" then return nil end
-    local stamp=tonumber(at) or os.time()
-    local key=book_id~="" and ("book:"..book_id) or ("file:"..path)
-    local state=self:recent_reads()
-    local items={{key=key,book_id=book_id,file=path,read_at=stamp}}
-    for _,row in ipairs(state.items) do
-        if type(row)=="table" and tostring(row.key or "")~=key then
-            local same_book=book_id~="" and tostring(row.book_id or "")==book_id
-            local same_file=path~="" and tostring(row.file or "")==path
-            if not same_book and not same_file then items[#items+1]=row end
-        end
-        if #items>=10 then break end
-    end
-    state.items=items
-    self:set_deferred("recent_reads",state)
-    if book_id~="" then self:mark_last_read(book_id,path,nil,false,stamp) end
-    return items[1]
-end
-function Store:shelf_cache() return U.merge(defaults.shelf_cache,self:get("shelf_cache",{})) end
-function Store:save_shelf_cache(v) self:set("shelf_cache",U.merge(defaults.shelf_cache,v or {})) end
-function Store:update_cached_progress(id,percent)
-    id=tostring(id or "")
-    percent=tonumber(percent)
-    if id=="" or percent==nil then return false end
-    local cache=self:shelf_cache()
-    local changed=false
-    for _,group in ipairs({cache.books or {},cache.mp or {}}) do
-        for _,row in ipairs(group) do
-            if tostring(row.bookId or row.book_id or "")==id then
-                row.progress=U.clamp(percent,0,100)
-                row.finished=row.progress>=100
-                changed=true
-            end
-        end
-    end
-    if changed then self:save_shelf_cache(cache) end
-    return changed
-end
-function Store:cover_guard() return U.merge(defaults.cover_guard,self:get("cover_guard",{})) end
-function Store:save_cover_guard(v) self:set("cover_guard",U.merge(defaults.cover_guard,v or {})) end
-function Store:cover_path(id) return self.covers_dir.."/"..U.id_name(id)..".img" end
-function Store:update_state() return self:get("update_state",{}) end
-function Store:save_update_state(v) self:set("update_state",v or {}) end
 function Store:flush()
     local previous_path=self.settings_path..".previous"
     if not self.isolated then

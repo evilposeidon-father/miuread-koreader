@@ -66,4 +66,12 @@ function T.test_resolve_alignment()
     B.eq(action, "different", "both disagree")
 end
 
+function T.test_compare_classification()
+    B.eq(PD.compare(50, nil, 2), "unknown", "missing remote")
+    B.eq(PD.compare(50, { percent = 51 }, 2), "same", "within threshold")
+    B.eq(PD.compare(50, { percent = 53 }, 2), "remote_ahead")
+    B.eq(PD.compare(50, { percent = 47 }, 2), "local_ahead")
+    B.eq(PD.compare(50, { percent = 53 }, 5), "same", "larger threshold")
+end
+
 return T
