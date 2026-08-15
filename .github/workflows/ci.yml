@@ -16,13 +16,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
-      - name: Run Lua 5.1 syntax checks
+      - name: Run Lua 5.1 syntax checks and headless Lua suite
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y lua5.1
           find miuread.koplugin -type f -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          lua5.1 tests/lua/run.lua
 
       - name: Run Python structural regression tests
         shell: bash

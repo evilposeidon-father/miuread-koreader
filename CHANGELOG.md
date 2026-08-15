@@ -4,7 +4,8 @@
 
 ## Unreleased
 
-- 暂无。
+- 测试 新增 Lua 5.1 无头测试套件 `tests/lua/run.lua`：纯逻辑单测（digests/codec/util/timezone/ui_scale/lazy）与插件 smoke 加载测试（stub KOReader 后加载 main.lua、全部控制器与懒加载 UI 模块）；`scripts/bootstrap_lua51.py` 可本地编译 Lua 5.1，CI 在语法检查后直接运行该套件。
+- 测试 Python 结构回归测试通过 `tests/test_lua_suite.py` 统一执行 Lua 套件（本地与 CI 均跑）。
 
 ## 4.5.24 - 2026-08-16
 

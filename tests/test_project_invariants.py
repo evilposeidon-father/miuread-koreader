@@ -40,10 +40,11 @@ class VersionConsistencyTests(unittest.TestCase):
         version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', meta).group(1)
         self.assertIn(f"## {version}", changelog)
 
-    def test_changelog_unreleased_is_placeholder(self):
+    def test_changelog_unreleased_records_lua_suite(self):
         changelog = read_text("CHANGELOG.md")
         self.assertIn("## Unreleased", changelog)
-        self.assertIn("- 暂无。", changelog)
+        self.assertIn("Lua 5.1", changelog)
+        self.assertIn("smoke", changelog)
 
     def test_changelog_current_version_records_controller_splits(self):
         changelog = read_text("CHANGELOG.md")
