@@ -1,19 +1,19 @@
 # miuread-koreader 项目摘要
 
-> {"title":"微信读书助手","summary":"面向 KOReader 的非官方微信读书客户端，支持云端同步、
+> {"title":"微信读书助手","summary":"KOReader 非官方微信读书客户端，支持
 
 ## 统计
 
-- 代码文件：123
-- 代码行数：约 65116
-- 主要语言：.lua 118、.py 4、.json 1
-- 项目大小：2895.6 KB
-- 最后更新：2026-08-16 02:03
-- 摘要生成时间：2026-08-16 02:05
+- 代码文件：125
+- 代码行数：约 65249
+- 主要语言：.lua 120、.py 4、.json 1
+- 项目大小：2900.7 KB
+- 最后更新：2026-08-16 02:09
+- 摘要生成时间：2026-08-16 02:11
 
 ## 文件清单（前 60）
 
-- `miuread.koplugin\main.lua`（14006 行）
+- `miuread.koplugin\main.lua`（12706 行）
 - `miuread.koplugin\miuread\sync.lua`（3492 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3211 行）
 - `miuread.koplugin\miuread\store.lua`（2183 行）
@@ -32,7 +32,9 @@
 - `miuread.koplugin\miuread\http.lua`（797 行）
 - `miuread.koplugin\miuread\footnotes.lua`（794 行）
 - `miuread.koplugin\miuread\local_annotation_database.lua`（775 行）
+- `miuread.koplugin\miuread\plugin_preferences.lua`（732 行）
 - `miuread.koplugin\miuread\legacy\read_report_worker.lua`（702 行）
+- `miuread.koplugin\miuread\plugin_repair.lua`（682 行）
 - `miuread.koplugin\miuread\internal_links.lua`（666 行）
 - `miuread.koplugin\miuread\home_quick_panel.lua`（658 行）
 - `miuread.koplugin\miuread\mp.lua`（647 行）
@@ -68,8 +70,6 @@
 - `miuread.koplugin\miuread\data_migration.lua`（299 行）
 - `miuread.koplugin\miuread\thought_face_factory.lua`（299 行）
 - `miuread.koplugin\miuread\download_progress.lua`（298 行）
+- `tests\test_project_invariants.py`（287 行）
 - `miuread.koplugin\miuread\reader_toc_dialog.lua`（281 行）
-- `tests\test_project_invariants.py`（270 行）
 - `miuread.koplugin\miuread\plugin_maintenance.lua`（268 行）
-- `miuread.koplugin\miuread\resource_refs.lua`（262 行）
-- `miuread.koplugin\miuread\reader_progress_dialog.lua`（257 行）

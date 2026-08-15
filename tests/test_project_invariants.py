@@ -129,6 +129,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginSearchMp", "plugin_search_mp.lua", ["search", "search_dialog", "open_or_download_mp_article"]),
             ("PluginRepair", "plugin_repair.lua", ["repair_current_book", "show_repair_history", "redownload_current"]),
             ("PluginPreferences", "plugin_preferences.lua", ["settings_menu", "performance_settings_menu", "local_library_settings_menu"]),
+            ("PluginThoughtPopup", "plugin_thought_popup.lua", ["_setup_thought_tap", "_open_thought_info", "_flush_reader_checkpoint"]),
         ]:
             module_path = f"miuread.koplugin/miuread/{file_name}"
             self.assertIn(f'local {module_name}=require("miuread.{file_name[:-4]}")', main)
@@ -200,6 +201,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "plugin_search_mp.lua",
             "plugin_repair.lua",
             "plugin_preferences.lua",
+            "plugin_thought_popup.lua",
         ]:
             text = read_text(f"miuread.koplugin/miuread/{name}")
             declared = set(re.findall(r'^local\s+(\w+)\s*=\s*(?:require|Lazy|gesture_aware_class)\(', text, re.M))

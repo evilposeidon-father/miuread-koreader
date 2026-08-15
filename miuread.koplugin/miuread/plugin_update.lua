@@ -25,10 +25,8 @@ local ButtonDialog = gesture_aware_class(RawButtonDialog, {_miuread_transient=tr
 local ConfirmBox = gesture_aware_class(RawConfirmBox, {_miuread_transient=true, _miuread_modal_surface=true})
 local PathChooser = gesture_aware_class(RawPathChooser, {_miuread_transient=true, _miuread_modal_surface=true})
 
-local function home_exiting()
-    local session = rawget(_G, "__MIUREAD_HOME_SESSION")
-    return type(session) == "table" and session.exiting == true
-end
+local Session = require("miuread.session_state")
+local function home_exiting() return Session.home_exiting() end
 
 local Plugin = {}
 

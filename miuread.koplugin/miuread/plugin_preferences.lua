@@ -30,23 +30,11 @@ local PathChooser = gesture_aware_class(RawPathChooser, {_miuread_transient=true
 
 local _ = Text.tr
 
--- Bridges to the shared home session owned by main.lua.
-local function home_session()
-    local session = rawget(_G, "__MIUREAD_HOME_SESSION")
-    if type(session) == "table" then return session end
-    return {}
-end
-
-local function home_exiting()
-    local session = rawget(_G, "__MIUREAD_HOME_SESSION")
-    return type(session) == "table" and session.exiting == true
-end
-
-local function reader_close_active()
-    local close_state = rawget(_G, "__MIUREAD_READER_CLOSE")
-    local state = tostring(type(close_state) == "table" and close_state.state or "idle")
-    return state ~= "idle" and state ~= "completed" and state ~= "failed"
-end
+-- Bridges to the shared home session owned by miuread.session_state.
+local Session = require("miuread.session_state")
+local function home_session() return Session.home() end
+local function home_exiting() return Session.home_exiting() end
+local function reader_close_active() return Session.reader_close_active() end
 
 -- Mirrors main.lua's HOME_ACTION_ITEM_ORDER; main.lua owns the home surface
 -- and keeps the authoritative copy for its own home menu code.

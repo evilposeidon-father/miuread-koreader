@@ -43,17 +43,9 @@ local function monotonic_wall_time()
     return os.time()
 end
 
-local function home_session()
-    local session = rawget(_G, "__MIUREAD_HOME_SESSION")
-    if type(session) == "table" then return session end
-    return {}
-end
-
-local function reader_close_active()
-    local close_state = rawget(_G, "__MIUREAD_READER_CLOSE")
-    local state = tostring(type(close_state) == "table" and close_state.state or "idle")
-    return state ~= "idle" and state ~= "completed" and state ~= "failed"
-end
+local Session = require("miuread.session_state")
+local function home_session() return Session.home() end
+local function reader_close_active() return Session.reader_close_active() end
 
 local function gesture_aware_class(base, attributes)
     local class = base:extend(attributes or {})
