@@ -189,4 +189,17 @@ function Session.home_exiting()
     return Session.home().exiting == true
 end
 
+function Session.normalized_reader_file(path)
+    path = tostring(path or "")
+    if path == "" then return nil end
+    return path
+end
+
+function Session.mark_reader_origin(path)
+    local home = Session.home()
+    home.reader_origin = true
+    home.native_visit = false
+    home.reader_file = Session.normalized_reader_file(path) or home.reader_file
+end
+
 return Session

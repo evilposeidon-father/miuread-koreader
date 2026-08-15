@@ -31,6 +31,8 @@ function T.test_load_main_and_controllers()
     test_method(plugin, "book_menu")
     test_method(plugin, "onShowMiuRead")
     test_method(plugin, "_begin_koreader_exit")
+    test_method(plugin, "_reader_file")
+    test_method(plugin, "return_to_miuread_home")
 end
 
 function T.test_load_lazy_ui_modules()

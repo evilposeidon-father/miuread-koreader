@@ -1,19 +1,19 @@
 # miuread-koreader 项目摘要
 
-> {"title":"微信
+> {"title":"微信读书助手","summary":"面向 KOReader 的非官方微信读书客户端
 
 ## 统计
 
-- 代码文件：152
-- 代码行数：约 66752
-- 主要语言：.lua 147、.py 4、.json 1
-- 项目大小：2960.5 KB
-- 最后更新：2026-08-16 03:10
-- 摘要生成时间：2026-08-16 03:12
+- 代码文件：153
+- 代码行数：约 66735
+- 主要语言：.lua 148、.py 4、.json 1
+- 项目大小：2961.0 KB
+- 最后更新：2026-08-16 03:14
+- 摘要生成时间：2026-08-16 03:16
 
 ## 文件清单（前 60）
 
-- `miuread.koplugin\main.lua`（11701 行）
+- `miuread.koplugin\main.lua`（11590 行）
 - `miuread.koplugin\miuread\sync.lua`（3424 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
 - `miuread.koplugin\miuread\downloader.lua`（1840 行）
@@ -65,7 +65,7 @@
 - `miuread.koplugin\miuread\store_identity.lua`（358 行）
 - `miuread.koplugin\miuread\cache_cleanup_task.lua`（354 行）
 - `miuread.koplugin\miuread\plugin_thought_popup.lua`（342 行）
-- `tests\test_project_invariants.py`（339 行）
+- `tests\test_project_invariants.py`（341 行）
 - `miuread.koplugin\miuread\reader_typography_dialog.lua`（331 行）
 - `miuread.koplugin\miuread\auth.lua`（321 行）
 - `miuread.koplugin\miuread\book_integrity.lua`（316 行）
