@@ -12,6 +12,7 @@ local BookIntegrity = require("miuread.book_integrity")
 local PrecisePosition = require("miuread.precise_position")
 local SourcePosition = require("miuread.source_position")
 local ProgressDecision = require("miuread.progress_decision")
+local ReportDaemon = require("miuread.report_daemon")
 local U = require("miuread.util")
 
 local Sync = {}
@@ -2088,15 +2089,7 @@ function Sync:jump(percent)
     end)
 end
 
-local function daemon_stamp(status)
-    if type(status) ~= "table" then return nil end
-    return table.concat({
-        tostring(status.generation or 0),
-        tostring(status.seq or 0),
-        tostring(status.state or ""),
-        tostring(status.completed_at or status.attempted_at or status.written_at or 0),
-    }, ":")
-end
+local daemon_stamp = ReportDaemon.stamp
 
 local process_ffi
 local function process_helpers()
@@ -2152,35 +2145,26 @@ function Sync:_retire_legacy_daemon()
     -- Stop workers created by earlier service layouts before starting v10.
     -- Their job files contained authentication snapshots, so overwrite those
     -- snapshots immediately and remove the remaining files after the worker exits.
-    local base = self.store.temp_dir .. "/readtime-service"
-    local retired={}
-    for _, suffix in ipairs({"", "-v1", "-v2", "-v3", "-v4", "-v5", "-v6", "-v7", "-v8", "-v9"}) do
-        local prefix=base..suffix
-        local owner_path=prefix..".owner.json"
-        retired[#retired+1]={
-            job=prefix..".job.json",control=prefix..".control.json",status=prefix..".status.json",
-            context=prefix..".context.json",stop=prefix..".stop",owner=owner_path,lock=prefix..".lock",
-        }
-        local generation=2147483000
-        U.atomic_write(prefix..".job.json",Json.encode({
+    local retired = ReportDaemon.retired_specs(self.store.temp_dir)
+    for _, paths in ipairs(retired) do
+        local generation = 2147483000
+        U.atomic_write(paths.job, Json.encode({
             generation=generation,controller_token="retired",book_id="",book={},auth={},interval=Config.READ_INTERVAL,
         }),true)
-        U.atomic_write(prefix..".control.json",Json.encode({
+        U.atomic_write(paths.control, Json.encode({
             active=false,generation=generation,controller_token="retired",updated_at=os.time(),
         }),true)
-        U.atomic_write(prefix..".stop", "1", true)
+        U.atomic_write(paths.stop, "1", true)
         -- Status/context may contain old cookies or report tokens. They are not
         -- needed once the worker has been retired, so remove them immediately.
-        os.remove(prefix..".status.json")
-        os.remove(prefix..".context.json")
+        os.remove(paths.status)
+        os.remove(paths.context)
     end
     local function purge()
         for _,paths in ipairs(retired) do
             local owner=read_json_file(paths.owner)
             if not owner or not process_alive(owner.pid) then
-                os.remove(paths.job); os.remove(paths.control); os.remove(paths.status)
-                os.remove(paths.context); os.remove(paths.stop); os.remove(paths.owner)
-                remove_lock_dir(paths.lock)
+                ReportDaemon.delete_paths(paths)
             end
         end
     end
@@ -2190,19 +2174,7 @@ function Sync:_retire_legacy_daemon()
 end
 
 function Sync:_daemon_paths()
-    -- One versioned service per KOReader process. The version suffix prevents
-    -- an OTA reload from reusing a worker created by older plugin code.
-    local base = self.store.temp_dir .. "/readtime-service-v"
-        .. tostring(READ_REPORT_SERVICE_VERSION)
-    return {
-        job = base .. ".job.json",
-        control = base .. ".control.json",
-        status = base .. ".status.json",
-        context = base .. ".context.json",
-        stop = base .. ".stop",
-        owner = base .. ".owner.json",
-        lock = base .. ".lock",
-    }
+    return ReportDaemon.paths(self.store.temp_dir, READ_REPORT_SERVICE_VERSION)
 end
 
 function Sync:_cleanup_daemon_files(daemon)
@@ -2210,13 +2182,7 @@ function Sync:_cleanup_daemon_files(daemon)
     local paths = daemon.paths
     local owner = read_json_file(paths.owner)
     if not owner or not process_alive(owner.pid) then
-        os.remove(paths.job)
-        os.remove(paths.control)
-        os.remove(paths.status)
-        os.remove(paths.context)
-        os.remove(paths.stop)
-        os.remove(paths.owner)
-        remove_lock_dir(paths.lock)
+        ReportDaemon.delete_paths(paths)
     end
 end
 

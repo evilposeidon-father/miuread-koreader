@@ -1,21 +1,22 @@
 # miuread-koreader 项目摘要
 
-> KOReader 非官方微信读书客户端，支持划线与想法同步、本地书匹配及 OTA 升级。
+> MiuRead 是 KOReader 的非官方微信读书客户端，支持同步划线与想法、本地书匹配及 OTA 升级。
 
 ## 统计
 
-- 代码文件：160
-- 代码行数：约 67112
-- 主要语言：.lua 155、.py 4、.json 1
-- 项目大小：2974.1 KB
-- 最后更新：2026-08-16 03:31
-- 摘要生成时间：2026-08-16 03:33
+- 代码文件：161
+- 代码行数：约 67195
+- 主要语言：.lua 156、.py 4、.json 1
+- 项目大小：2977.6 KB
+- 最后更新：2026-08-16 03:35
+- 摘要生成时间：2026-08-16 03:37
 
 ## 文件清单（前 60）
 
-- `miuread.koplugin\main.lua`（6176 行）
+- `miuread.koplugin\miuread\plugin_home_content.lua`（3523 行）
 - `miuread.koplugin\miuread\sync.lua`（3424 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
+- `miuread.koplugin\main.lua`（2727 行）
 - `miuread.koplugin\miuread\plugin_home.lua`（2032 行）
 - `miuread.koplugin\miuread\downloader.lua`（1840 行）
 - `miuread.koplugin\miuread\plugin_download.lua`（1774 行）
@@ -52,7 +53,7 @@
 - `miuread.koplugin\miuread\reader_frontlight_dialog.lua`（487 行）
 - `miuread.koplugin\miuread\plugin_search_mp.lua`（470 行）
 - `miuread.koplugin\miuread\thought_database.lua`（470 行）
-- `miuread.koplugin\miuread\plugin_home_customize.lua`（467 行）
+- `miuread.koplugin\miuread\plugin_home_customize.lua`（461 行）
 - `miuread.koplugin\miuread\reader_list_dialog.lua`（449 行）
 - `miuread.koplugin\miuread\local_metadata.lua`（445 行）
 - `miuread.koplugin\miuread\precise_position.lua`（434 行）
@@ -68,8 +69,7 @@
 - `miuread.koplugin\miuread\plugin_update.lua`（369 行）
 - `miuread.koplugin\miuread\reader_control_center.lua`（368 行）
 - `miuread.koplugin\miuread\store_identity.lua`（358 行）
+- `tests\test_project_invariants.py`（356 行）
 - `miuread.koplugin\miuread\cache_cleanup_task.lua`（354 行）
-- `tests\test_project_invariants.py`（354 行）
 - `miuread.koplugin\miuread\plugin_thought_popup.lua`（342 行）
 - `miuread.koplugin\miuread\reader_typography_dialog.lua`（331 行）
-- `miuread.koplugin\miuread\auth.lua`（321 行）
