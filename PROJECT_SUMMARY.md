@@ -4,17 +4,17 @@
 
 ## 统计
 
-- 代码文件：150
-- 代码行数：约 66664
-- 主要语言：.lua 145、.py 4、.json 1
-- 项目大小：2953.7 KB
-- 最后更新：2026-08-16 03:06
-- 摘要生成时间：2026-08-16 03:07
+- 代码文件：152
+- 代码行数：约 66752
+- 主要语言：.lua 147、.py 4、.json 1
+- 项目大小：2960.5 KB
+- 最后更新：2026-08-16 03:10
+- 摘要生成时间：2026-08-16 03:12
 
 ## 文件清单（前 60）
 
 - `miuread.koplugin\main.lua`（11701 行）
-- `miuread.koplugin\miuread\sync.lua`（3490 行）
+- `miuread.koplugin\miuread\sync.lua`（3424 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
 - `miuread.koplugin\miuread\downloader.lua`（1840 行）
 - `miuread.koplugin\miuread\plugin_download.lua`（1774 行）

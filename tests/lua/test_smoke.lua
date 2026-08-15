@@ -30,6 +30,7 @@ function T.test_load_main_and_controllers()
     test_method(plugin, "show_home_quick_panel")
     test_method(plugin, "book_menu")
     test_method(plugin, "onShowMiuRead")
+    test_method(plugin, "_begin_koreader_exit")
 end
 
 function T.test_load_lazy_ui_modules()
