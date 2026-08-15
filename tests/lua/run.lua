@@ -24,6 +24,7 @@ local suites = {
     "test_progress_decision",
     "test_session_state",
     "test_store_downloads",
+    "test_store_auth_sessions",
     "test_smoke",
 }
 

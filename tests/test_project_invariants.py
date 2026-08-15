@@ -217,17 +217,26 @@ class MainLuaStructureTests(unittest.TestCase):
             missing = sorted(used - declared)
             self.assertEqual([], missing, f"{name} uses modules without require: {missing}")
 
-    def test_store_downloads_reader_installed(self):
+    def test_store_readers_installed(self):
         store = read_text("miuread.koplugin/miuread/store.lua")
-        module = read_text("miuread.koplugin/miuread/store_downloads.lua")
+        downloads = read_text("miuread.koplugin/miuread/store_downloads.lua")
+        auth = read_text("miuread.koplugin/miuread/store_auth.lua")
+        sessions = read_text("miuread.koplugin/miuread/store_sessions.lua")
         defaults = read_text("miuread.koplugin/miuread/store_defaults.lua")
         self.assertIn('local StoreDownloads=require("miuread.store_downloads")', store)
-        self.assertIn("for name,func in pairs(StoreDownloads) do Store[name]=func end", store)
+        self.assertIn('local StoreAuth=require("miuread.store_auth")', store)
+        self.assertIn('local StoreSessions=require("miuread.store_sessions")', store)
         self.assertNotIn("function Store:download_state(", store)
+        self.assertNotIn("function Store:save_session(", store)
+        self.assertNotIn("function Store:auth()", store)
         self.assertNotIn("local defaults={", store)
         self.assertIn("local defaults={", defaults)
         for method in ["download_state", "save_download_state", "download_queue", "enqueue_download", "dequeue_download"]:
-            self.assertIn(f"function StoreDownloads:{method}(", module)
+            self.assertIn(f"function StoreDownloads:{method}(", downloads)
+        for method in ["auth", "save_auth", "auth_health", "clear_auth"]:
+            self.assertIn(f"function StoreAuth:{method}(", auth)
+        for method in ["session", "save_session", "clear_session", "invalidate_book_sync_context", "clear_login_bound_sessions"]:
+            self.assertIn(f"function StoreSessions:{method}(", sessions)
 
     def test_home_order_mirrors_stay_in_sync(self):
         main = read_text("miuread.koplugin/main.lua")

@@ -8,51 +8,12 @@ local U=require("miuread.util")
 local logger=require("logger")
 local Store={}; Store.__index=Store
 local StoreDownloads=require("miuread.store_downloads")
+local StoreAuth=require("miuread.store_auth")
+local StoreSessions=require("miuread.store_sessions")
 for name,func in pairs(StoreDownloads) do Store[name]=func end
-local function generate_login_session_id()
-    return tostring(os.time()).."-"..tostring(math.random(100000,999999))
-end
+for name,func in pairs(StoreAuth) do if type(func)=="function" then Store[name]=func end end
+for name,func in pairs(StoreSessions) do if type(func)=="function" then Store[name]=func end end
 local defaults=require("miuread.store_defaults")
-local function invalidate_report_contexts_table(sessions)
-    sessions=type(sessions)=="table" and sessions or {}
-    local changed=0
-    local clear_keys={
-        "legacy_report_context","report_context","psvts","pclts","token","reader_url",
-        "context_updated_at","report_login_session_id","verification_login_session_id",
-        "remote","remote_sources","remote_checked_at","remote_web_error","remote_agent_error",
-        "remote_verified","verified_at","verified_reason","verified_local_percent","verified_remote_percent",
-        "progress_sync_state","progress_sync_message","progress_upload_state","progress_upload_error",
-        "progress_upload_verified_at","progress_upload_source","progress_upload_at","progress_upload_percent",
-        "last_response_summary","last_http_code","last_http_length","last_payload_public","last_path",
-        "last_stage","last_error","last_attempts",
-    }
-    for _,session in pairs(sessions) do
-        if type(session)=="table" then
-            for _,key in ipairs(clear_keys) do
-                if session[key]~=nil then session[key]=nil; changed=changed+1 end
-            end
-            if tonumber(session.consecutive_failures or 0)~=0 then session.consecutive_failures=0; changed=changed+1 end
-            if tonumber(session.pending_report_seconds or 0)~=0 then session.pending_report_seconds=0; changed=changed+1 end
-        end
-    end
-    return sessions,changed
-end
-local function invalidate_upload_health_table(auth)
-    auth=U.merge(defaults.auth,auth or {})
-    auth.health.notice_pending=false
-    auth.health.last_error_channel=""
-    if tostring(auth.api_key or "")~="" and next(auth.cookies or {})~=nil then
-        auth.health.state="unknown"
-        for _,channel in ipairs({"progress","read_report"}) do
-            local row=auth.health.channels[channel] or {}
-            auth.health.channels[channel]={
-                state="unknown",checked_at=0,error="",code="",failures=0,retry_at=0,
-                last_ok_at=tonumber(row.last_ok_at or 0) or 0,
-            }
-        end
-    end
-    return auth
-end
 local function settings_file_valid(path)
     if not path or lfs.attributes(path,"mode")~="file" then return false,"missing" end
     local size=U.file_size(path) or 0
@@ -834,9 +795,9 @@ function Store:migrate()
             -- contain a stale chapter/context after QR login and cause both
             -- progress and reading-time uploads to be rejected indefinitely.
             local sessions=self.db:readSetting("sessions",{}) or {}
-            local cleaned,changed=invalidate_report_contexts_table(sessions)
+            local cleaned,changed=StoreSessions.invalidate_report_contexts_table(sessions)
             if changed>0 then self.db:saveSetting("sessions",cleaned) end
-            local auth=invalidate_upload_health_table(self.db:readSetting("auth",{}) or {})
+            local auth=StoreSessions.invalidate_upload_health_table(self.db:readSetting("auth",{}) or {})
             self.db:saveSetting("auth",auth)
         end
         if schema<59 then
@@ -844,7 +805,7 @@ function Store:migrate()
             -- pending reading-time data, but discards protocol contexts that
             -- may combine a local snapshot with a different reader-page state.
             local sessions=self.db:readSetting("sessions",{}) or {}
-            local cleaned,changed=invalidate_report_contexts_table(sessions)
+            local cleaned,changed=StoreSessions.invalidate_report_contexts_table(sessions)
             for _,session in pairs(cleaned) do
                 if type(session)=="table" then
                     if session.progress_sync_state=="mapping_pending"
@@ -855,7 +816,7 @@ function Store:migrate()
                 end
             end
             if changed>0 then self.db:saveSetting("sessions",cleaned) end
-            self.db:saveSetting("auth",invalidate_upload_health_table(self.db:readSetting("auth",{}) or {}))
+            self.db:saveSetting("auth",StoreSessions.invalidate_upload_health_table(self.db:readSetting("auth",{}) or {}))
         end
         if schema<60 then
             -- 2.3.4 restores one simple success-notice switch and removes
@@ -1172,11 +1133,11 @@ function Store:migrate()
                 and tostring(account.vid or "")~=""
                 and tostring(auth.api_key or "")~=""
                 and next(auth.cookies or {})~=nil then
-                auth.login_session_id=generate_login_session_id()
+                auth.login_session_id=StoreAuth.generate_login_session_id()
             end
-            self.db:saveSetting("auth",invalidate_upload_health_table(auth))
+            self.db:saveSetting("auth",StoreSessions.invalidate_upload_health_table(auth))
             local sessions=self.db:readSetting("sessions",{}) or {}
-            local cleaned,changed=invalidate_report_contexts_table(sessions)
+            local cleaned,changed=StoreSessions.invalidate_report_contexts_table(sessions)
             if changed>0 then self.db:saveSetting("sessions",cleaned) end
         end
         if schema<93 then
@@ -1359,45 +1320,6 @@ end
 function Store:get(k,d) local v=self.db:readSetting(k,nil); return v==nil and U.copy(d) or v end
 function Store:set(k,v) self.db:saveSetting(k,v); self:flush() end
 function Store:set_deferred(k,v) self.db:saveSetting(k,v) end
-local function sanitized_auth(value)
-    local auth=U.merge(defaults.auth,value or {})
-    auth.mp_cookie_header=nil
-    auth.mp_extra_headers=nil
-    auth.mp_referer=nil
-    auth.mp_auth_source=nil
-    auth.mp_authorized_at=nil
-    return auth
-end
-function Store:auth() return sanitized_auth(self:get("auth",{})) end
-function Store:save_auth(v) self:set("auth",sanitized_auth(v)) end
-function Store:generate_login_session_id() return generate_login_session_id() end
-function Store:ensure_login_session_id()
-    local auth=self:auth()
-    local account=type(auth.account)=="table" and auth.account or {}
-    if tostring(auth.login_session_id or "")=="" and tostring(account.vid or "")~=""
-        and tostring(auth.api_key or "")~="" and next(auth.cookies or {})~=nil then
-        auth.login_session_id=generate_login_session_id()
-        self:save_auth(auth)
-    end
-    return tostring(auth.login_session_id or "")
-end
-function Store:auth_health()
-    local auth=self:auth()
-    return U.merge(defaults.auth.health,auth.health or {})
-end
-function Store:update_auth_health(patch)
-    local auth=self:auth()
-    auth.health=U.merge(defaults.auth.health,auth.health or {})
-    auth.health=U.merge(auth.health,patch or {})
-    self:save_auth(auth)
-    return auth.health
-end
-function Store:clear_auth() self:set("auth",U.copy(defaults.auth)) end
-function Store:clear_account_shelf_cache()
-    local cache=self:shelf_cache()
-    cache.books={}; cache.mp={}; cache.updated_at=0
-    self:save_shelf_cache(cache)
-end
 function Store:preferences() return U.merge(defaults.preferences,self:get("preferences",{})) end
 function Store:save_preferences(v) self:set("preferences",U.merge(defaults.preferences,v or {})) end
 function Store:save_preferences_deferred(v) self:set_deferred("preferences",U.merge(defaults.preferences,v or {})) end
@@ -1961,41 +1883,6 @@ function Store:record_recent_read(book_id,path,at)
     if book_id~="" then self:mark_last_read(book_id,path,nil,false,stamp) end
     return items[1]
 end
-function Store:clear_login_bound_sessions(reason)
-    local sessions=self:get("sessions",{})
-    local cleaned,changed=invalidate_report_contexts_table(sessions)
-    if changed>0 then self:set("sessions",cleaned) end
-    self:save_auth(invalidate_upload_health_table(self:get("auth",{})))
-    logger.info("[MiuRead][Store] login-bound sessions cleared",
-        "reason=",tostring(reason or "unknown"),"fields=",tostring(changed))
-    return changed,reason
-end
-function Store:invalidate_report_contexts(reason)
-    return self:clear_login_bound_sessions(reason)
-end
-function Store:session(id) return self:get("sessions",{})[tostring(id)] end
-function Store:save_session(id,patch,flush_now) local a=self:get("sessions",{}); local k=tostring(id); a[k]=U.merge(a[k] or {},patch or {}); self.db:saveSetting("sessions",a); if flush_now~=false then self:flush() end; return a[k] end
-function Store:invalidate_book_sync_context(id,reason,core_map_hash)
-    local sessions=self:get("sessions",{})
-    local key=tostring(id or "")
-    if key=="" then return false end
-    local row=type(sessions[key])=="table" and sessions[key] or {}
-    for _,field in ipairs({
-        "legacy_report_context","report_context","report_login_session_id","report_core_map_hash",
-        "remote_verified","verified_at","verified_reason","verified_local_percent","verified_remote_percent",
-        "verification_login_session_id","progress_upload_state","progress_upload_verified_at","progress_upload_source",
-        "pending_report_seconds"
-    }) do row[field]=nil end
-    row.sync_context_invalidated_at=os.time()
-    row.sync_context_invalidated_reason=tostring(reason or "book_context_changed")
-    row.book_core_map_hash=tostring(core_map_hash or row.book_core_map_hash or "")
-    row.pending_report_seconds=0
-    sessions[key]=row
-    self.db:saveSetting("sessions",sessions)
-    self:flush()
-    return true,row
-end
-function Store:clear_session(id) local a=self:get("sessions",{}); a[tostring(id)]=nil; self:set("sessions",a) end
 function Store:shelf_cache() return U.merge(defaults.shelf_cache,self:get("shelf_cache",{})) end
 function Store:save_shelf_cache(v) self:set("shelf_cache",U.merge(defaults.shelf_cache,v or {})) end
 function Store:update_cached_progress(id,percent)
