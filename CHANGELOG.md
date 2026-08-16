@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.39 - 2026-08-17
+
+- 架构 拆 downloader.lua 上帝模块第一批：抽出 `miuread.chapter_title` 深模块（12 个纯函数：标题归一/全角折叠/去前导/编号判定/HTML 属性/标题扫描/legacy 归一），downloader.lua 从 1,840 行降至 1,732 行并保留本地别名委托。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 154 个用例：新增 chapter_title 6 个纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.38 - 2026-08-16
 
 - 架构 拆 annotations.lua 上帝模块第一批：抽出 `miuread.annotation_text` 深模块（10 个纯函数：UTF-8 宽度/编码、HTML 实体解码、单元切分、可忽略文本、标签解析、tokenize、UTF-16 宽度、文本索引、归一化），annotations.lua 从 991 行降至 814 行并保留本地别名委托。

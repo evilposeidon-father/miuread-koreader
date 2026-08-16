@@ -21,6 +21,7 @@ local suites = {
     "test_home_network_metadata",
     "test_content_classify",
     "test_annotation_text",
+    "test_chapter_title",
     "test_download_coordinator",
     "test_util",
     "test_codec",
