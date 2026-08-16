@@ -4,7 +4,7 @@ MiuRead（觅阅 · 微信读书助手）是面向 KOReader 的非官方微信�
 
 ## Current Release
 
-当前版本：`4.5.37`。
+当前版本：`4.5.38`。
 
 完整版本记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 

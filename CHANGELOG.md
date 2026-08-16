@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.38 - 2026-08-16
+
+- 架构 拆 annotations.lua 上帝模块第一批：抽出 `miuread.annotation_text` 深模块（10 个纯函数：UTF-8 宽度/编码、HTML 实体解码、单元切分、可忽略文本、标签解析、tokenize、UTF-16 宽度、文本索引、归一化），annotations.lua 从 991 行降至 814 行并保留本地别名委托。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 148 个用例：新增 annotation_text 6 个纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.37 - 2026-08-16
 
 - 架构 拆 reader.lua 上帝模块第一批：抽出 `miuread.content_classify` 深模块（16 个纯函数：章节/封面/不可读判定、可见文本、内容标记、空章与服务错误分类），reader.lua 从 1,183 行降至 1,040 行并保留本地别名委托。
