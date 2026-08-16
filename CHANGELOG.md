@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.40 - 2026-08-17
+
+- 架构 拆 external_annotation_sync.lua 上帝模块第一批：抽出 `miuread.external_annotation_parse` 深模块（9 个纯函数：range 收集/目录签名/章节字段/想法归一/scalar/记录收集/review 拆分/书名关键词清洗），external_annotation_sync.lua 从 1,548 行降至 1,458 行并保留本地别名委托。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 160 个用例：新增 external_annotation_parse 6 个纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.39 - 2026-08-17
 
 - 架构 拆 downloader.lua 上帝模块第一批：抽出 `miuread.chapter_title` 深模块（12 个纯函数：标题归一/全角折叠/去前导/编号判定/HTML 属性/标题扫描/legacy 归一），downloader.lua 从 1,840 行降至 1,732 行并保留本地别名委托。

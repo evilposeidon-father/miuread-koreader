@@ -22,6 +22,7 @@ local suites = {
     "test_content_classify",
     "test_annotation_text",
     "test_chapter_title",
+    "test_external_annotation_parse",
     "test_download_coordinator",
     "test_util",
     "test_codec",
