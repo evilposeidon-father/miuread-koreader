@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.35 - 2026-08-16
+
+- 架构 拆 plugin_home_content 上帝模块第一批：抽出 `miuread.home_network_metadata` 深模块（metadata_key/patch_has_data/patch_field_count/missing_fields/merge_patch 5 个纯函数），plugin_home_content 从 3,527 行降至 3,475 行并改为委托。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 136 个用例：新增 home_network_metadata 5 个纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.34 - 2026-08-16
 
 - 架构 拆 sync.lua 上帝模块第一批：抽出 `miuread.sync_response` 深模块（14 个纯函数：response 确认/synckey/进度节点归一/远端进度选择/位置匹配/context 组装/catalog 进度），sync.lua 从 3,390 行降至 3,151 行并保留本地别名委托。

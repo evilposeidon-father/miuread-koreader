@@ -18,6 +18,7 @@ local suites = {
     "test_protocol",
     "test_read_report_transport",
     "test_sync_response",
+    "test_home_network_metadata",
     "test_download_coordinator",
     "test_util",
     "test_codec",

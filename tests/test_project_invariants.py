@@ -171,7 +171,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "DownloadProgress", "DownloadResult", "DownloadTask", "Downloader",
             "EpubInstaller", "Event", "ExternalAnnotationsDB",
             "ExternalAnnotationSync", "FullShelfView", "GestureBridge",
-            "HomeData", "HomeQuickPanel", "HomeView", "Http", "InputDialog",
+            "HomeData", "HomeNetworkMetadata", "HomeQuickPanel", "HomeView", "Http", "InputDialog",
             "HOME_SESSION", "unpack_args",
             "Json", "Lazy", "Library", "LocalAnnotationDatabase",
             "LocalBrowserView", "LocalLibrary", "LocalMetadata", "MemoryMode",

@@ -11,6 +11,7 @@ local HomeView = require("miuread.home_view")
 local Library = require("miuread.library")
 local LocalMetadata = require("miuread.local_metadata")
 local NetworkMetadata = require("miuread.network_metadata")
+local HomeNetworkMetadata = require("miuread.home_network_metadata")
 local PluginSettings = require("miuread.plugin_settings")
 local Protocol = require("miuread.protocol")
 local ActionSheet = require("miuread.action_sheet")
@@ -2468,15 +2469,7 @@ end
 
 
 function Plugin:_home_network_metadata_key(book)
-    if type(book)~="table" then return "" end
-    local id=tostring(book.bookId or book.book_id or "")
-    if id~="" then return "book:"..id end
-    local file=tostring(book.file or ""):gsub("\\","/"):gsub("/+","/")
-    if file~="" then return "file:"..file end
-    local title=U.trim(tostring(book.title or ""))
-    local author=U.trim(tostring(book.author or ""))
-    if title~="" then return "title:"..title.."|"..author end
-    return ""
+    return HomeNetworkMetadata.metadata_key(book)
 end
 
 function Plugin:_home_network_metadata_cache()
@@ -2486,56 +2479,12 @@ function Plugin:_home_network_metadata_cache()
     return cache
 end
 
-local function home_network_patch_has_data(patch)
-    if type(patch)~="table" then return false end
-    for _,key in ipairs({"title","author","description","category","publisher","published_date","language","isbn","pages"}) do
-        if U.trim(tostring(patch[key] or ""))~="" then return true end
-    end
-    return false
-end
-
-local HOME_NETWORK_DETAIL_FIELDS={"description","category","publisher","published_date","isbn"}
-
-local function home_network_patch_field_count(patch)
-    if type(patch)~="table" then return 0 end
-    local count=0
-    for _,key in ipairs({"title","author","description","category","publisher","published_date","language","isbn","pages"}) do
-        if U.trim(tostring(patch[key] or ""))~="" then count=count+1 end
-    end
-    return count
-end
-
-local function home_network_missing_fields(book,patch)
-    book=type(book)=="table" and book or {}
-    patch=type(patch)=="table" and patch or {}
-    local missing={}
-    for _,key in ipairs(HOME_NETWORK_DETAIL_FIELDS) do
-        local value=patch[key]
-        if value==nil or value=="" then value=book[key] end
-        if key=="description" and U.trim(tostring(value or ""))=="" then
-            value=book.intro or book.summary
-        end
-        if U.trim(tostring(value or ""))=="" then missing[#missing+1]=key end
-    end
-    return missing
-end
+local home_network_patch_has_data = HomeNetworkMetadata.patch_has_data
+local home_network_patch_field_count = HomeNetworkMetadata.patch_field_count
+local home_network_missing_fields = HomeNetworkMetadata.missing_fields
 
 function Plugin:_home_merge_network_patch(book,patch)
-    if type(book)~="table" or type(patch)~="table" then return false end
-    local changed=false
-    local function fill(key,value)
-        if value==nil or value=="" then return end
-        local current=book[key]
-        if current==nil or current=="" then book[key]=value; changed=true end
-    end
-    for _,key in ipairs({"title","author","description","category","publisher","published_date","language","isbn","pages"}) do
-        fill(key,patch[key])
-    end
-    if patch.metadata_source and (book.network_metadata_source==nil or book.network_metadata_source=="") then
-        book.network_metadata_source=patch.metadata_source
-        changed=true
-    end
-    return changed
+    return HomeNetworkMetadata.merge_patch(book,patch)
 end
 
 function Plugin:_home_apply_cached_network_metadata(book)
