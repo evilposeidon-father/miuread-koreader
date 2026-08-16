@@ -17,6 +17,7 @@ local suites = {
     "test_digests",
     "test_protocol",
     "test_read_report_transport",
+    "test_sync_response",
     "test_download_coordinator",
     "test_util",
     "test_codec",

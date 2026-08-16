@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.34 - 2026-08-16
+
+- 架构 拆 sync.lua 上帝模块第一批：抽出 `miuread.sync_response` 深模块（14 个纯函数：response 确认/synckey/进度节点归一/远端进度选择/位置匹配/context 组装/catalog 进度），sync.lua 从 3,390 行降至 3,151 行并保留本地别名委托。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 131 个用例：新增 sync_response 6 个纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.33 - 2026-08-16
 
 - 架构 退役 legacy 网络层第三步（完成）：把阅读时长上报传输迁到 `miuread.read_report_transport`（基于 `miuread.http`，所有请求 `retries=0` 单次尝试、退避仍由 `read_report_service` 负责），阅读上下文/目录迁到 `miuread.read_report_context`，工作器迁到 `miuread.read_report_worker`，适配器迁到 `miuread.read_report_adapter`，整个 `miuread/legacy` 目录删除。
