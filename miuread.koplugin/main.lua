@@ -24,6 +24,7 @@ local Lazy=require("miuread.lazy")
 local PluginMaintenance=require("miuread.plugin_maintenance")
 local PluginUpdate=require("miuread.plugin_update")
 local PluginSync=require("miuread.plugin_sync")
+local PluginSyncCenter=require("miuread.plugin_sync_center")
 local PluginDownload=require("miuread.plugin_download")
 local PluginReader=require("miuread.plugin_reader")
 local PluginSearchMp=require("miuread.plugin_search_mp")
@@ -278,6 +279,7 @@ ExternalAnnotationSync.install(Plugin)
 PluginMaintenance.install(Plugin)
 PluginUpdate.install(Plugin)
 PluginSync.install(Plugin)
+PluginSyncCenter.install(Plugin)
 PluginDownload.install(Plugin)
 PluginReader.install(Plugin)
 PluginSearchMp.install(Plugin)
@@ -321,6 +323,9 @@ function Plugin:init()
     local timezone_ok,timezone_error=TimeZone.apply((self.store:preferences() or {}).time_display)
     if not timezone_ok then logger.warn("[MiuRead][TimeZone] startup apply failed",tostring(timezone_error or "unknown")) end
     self._reader_context=self.ui and self.ui.document~=nil
+    -- Silent sync scheduler: timers use UIManager, the gate uses the live
+    -- login/network state, and actions are the existing sync entry points.
+    self:_ensure_sync_scheduler()
     if self._reader_context then
         local document=self.ui.document
         local path=normalized_reader_file(document and (document.file or (document.getFilePath and document:getFilePath())) or nil)
@@ -2278,7 +2283,12 @@ function Plugin:_schedule_local_annotation_snapshot(reason,delay)
     task=function()
         if self._local_annotation_snapshot_task~=task then return end
         self._local_annotation_snapshot_task=nil
-        self:_capture_local_annotation_snapshot(reason)
+        local captured=self:_capture_local_annotation_snapshot(reason)
+        -- Annotation edits trigger the same silent upload path the shortcut
+        -- uses: debounce first, then a quiet background worker.
+        if captured and reason=="annotations_modified" then
+            self:_sync_scheduler_request("local_annotations",12,reason)
+        end
     end
     self._local_annotation_snapshot_task=task
     UIManager:scheduleIn(math.max(.5,tonumber(delay) or 2.4),task)

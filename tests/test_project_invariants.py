@@ -100,6 +100,7 @@ class MainLuaStructureTests(unittest.TestCase):
                 "plugin_maintenance.lua",
                 "plugin_update.lua",
                 "plugin_sync.lua",
+                "plugin_sync_center.lua",
                 "plugin_download.lua",
                 "plugin_reader.lua",
             ]
@@ -131,6 +132,7 @@ class MainLuaStructureTests(unittest.TestCase):
         for module_name, file_name, methods in [
             ("PluginUpdate", "plugin_update.lua", ["check_update", "maybe_auto_check_update", "show_about"]),
             ("PluginSync", "plugin_sync.lua", ["ensure_read_report_progress", "manual_sync", "show_sync_status"]),
+            ("PluginSyncCenter", "plugin_sync_center.lua", ["_ensure_sync_scheduler", "_sync_scheduler_request", "_sync_scheduler_run_now", "_sync_gate_allowed"]),
             ("PluginDownload", "plugin_download.lua", ["download", "show_downloads", "show_download_cleanup_dialog"]),
             ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu"]),
             ("PluginSearchMp", "plugin_search_mp.lua", ["search", "search_dialog", "open_or_download_mp_article"]),
@@ -178,7 +180,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "ProgressDecision", "Protocol", "Reader", "ReaderControlCenter", "ReaderFrontlightDialog",
             "ReaderListDialog", "ReaderProgressDialog", "ReaderSettingsDialog",
             "ReaderTocDialog", "ReaderToolbar", "ReaderTypographyDialog",
-            "ScreenshotMode", "ShelfView", "StatusToast", "Store", "Sync",
+            "ScreenshotMode", "Scheduler", "ShelfView", "StatusToast", "Store", "Sync",
             "Text", "ThoughtNativePopup", "Thoughts", "TimeZone",
             "TransientGuard", "U", "UIManager", "UiScale", "Updater", "WidgetContainer",
             "lfs", "logger",
@@ -216,6 +218,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "plugin_maintenance.lua",
             "plugin_update.lua",
             "plugin_sync.lua",
+            "plugin_sync_center.lua",
             "plugin_download.lua",
             "plugin_reader.lua",
             "plugin_search_mp.lua",

@@ -1207,7 +1207,11 @@ function Plugin:onReaderReady()
     self:_schedule_reader_toolbar_prewarm(ready_session,1.1)
     self:_teardown_thought_tap()
     self:_teardown_external_annotations()
-    self:_setup_external_annotations()
+    if self:_setup_external_annotations() then
+        -- Silent cloud pull: gate/debounce/retry live in the scheduler and the
+        -- quiet entry point below never opens a dialog or progress window.
+        self:_sync_scheduler_request("external_annotations",8,"reader_ready")
+    end
     self._progress_prompted_book_id=nil
     self._progress_check_running=false
     self._progress_remote_retries={}

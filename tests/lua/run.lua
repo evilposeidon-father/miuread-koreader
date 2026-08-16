@@ -30,6 +30,7 @@ local suites = {
     "test_store_library_pending",
     "test_store_identity",
     "test_store_meta",
+    "test_sync_center",
     "test_sync_scheduler",
     "test_smoke",
 }

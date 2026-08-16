@@ -75,6 +75,19 @@ function Scheduler:cancel(kind)
     return true
 end
 
+function Scheduler:cancel_all()
+    for kind in pairs(KINDS) do
+        local state = self.state[kind]
+        if state then
+            state.dirty = false
+            state.running = false
+            state.due_at = 0
+        end
+    end
+    self:_ensure_timer()
+    return true
+end
+
 function Scheduler:run_now(kind, force)
     if not KINDS[kind] then return false end
     local state = kind_state(self, kind)
@@ -149,6 +162,27 @@ function Scheduler:_dispatch(kind, state, force)
         self:record_result(kind, ok, action_err)
     end)
     if started == false then
+        if err == "skip" then
+            -- The action is not applicable right now (for example a reader-only
+            -- pull requested from the home screen). Do not retry and do not
+            -- count it as a failure; a later request can schedule it again.
+            state.running = false
+            state.dirty = false
+            state.due_at = 0
+            state.reason = "skipped"
+            state.last_error = nil
+            return false, "skipped"
+        end
+        if err == "busy" then
+            -- The action is already running somewhere else. Keep the request
+            -- dirty and retry silently without recording a failure.
+            state.running = false
+            state.dirty = true
+            state.due_at = now + math.max(8, self.backoff_base)
+            state.reason = "busy"
+            self:_ensure_timer()
+            return false, "busy"
+        end
         self:record_result(kind, false, err)
         return false, tostring(err or "action_unavailable")
     end

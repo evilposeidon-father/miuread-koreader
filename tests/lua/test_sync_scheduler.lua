@@ -122,4 +122,57 @@ function T.test_unknown_kind_rejected()
     B.eq(s:request("bogus", 1, "x"), false)
 end
 
+function T.test_run_false_skip_is_not_a_failure()
+    local host = fake_host(1000)
+    host.default_delay = 0
+    host.gate_open = true
+    function host:run(kind, callback)
+        self.runs[#self.runs + 1] = { kind = kind, callback = callback }
+        return false, "skip"
+    end
+    local s = Scheduler.new(host)
+    s:request("progress", 0, "test")
+    local started, err = s:tick()
+    B.eq(started, nil, "tick returns nothing")
+    B.eq(#host.runs, 1)
+    B.eq(err, nil)
+    B.eq(s:status().failed, 0, "skip is not a failure")
+    B.eq(s:status_label(), "已同步")
+    B.eq(s:status().pending, 0, "skip clears the pending request")
+end
+
+function T.test_run_false_busy_retries_without_failure()
+    local host = fake_host(1000)
+    host.default_delay = 0
+    host.gate_open = true
+    host.busy = true
+    function host:run(kind, callback)
+        self.runs[#self.runs + 1] = { kind = kind, callback = callback }
+        if self.busy then return false, "busy" end
+        return true
+    end
+    local s = Scheduler.new(host)
+    s:request("external_annotations", 0, "test")
+    s:tick()
+    B.eq(#host.runs, 1)
+    B.eq(s:status().failed, 0, "busy is not a failure")
+    B.eq(s:status_label(), "等待同步")
+    host.busy = false
+    host.now = 1020
+    s:tick()
+    B.eq(#host.runs, 2, "busy request retries later")
+end
+
+function T.test_cancel_all_clears_pending_work()
+    local host = fake_host(1000)
+    host.default_delay = 60
+    local s = Scheduler.new(host)
+    s:request("local_annotations", 60, "a")
+    s:request("external_annotations", 60, "b")
+    B.eq(s:status().pending, 2)
+    B.eq(s:cancel_all(), true)
+    B.eq(s:status().pending, 0)
+    B.eq(s:status_label(), "已同步")
+end
+
 return T

@@ -501,31 +501,69 @@ function M:_external_bind_book(path, book, touchmenu_instance)
     })
 end
 
-function M:sync_external_annotations()
+function M:sync_external_annotations(options)
+    local opts = type(options) == "table" and options or {}
+    local silent = opts.silent == true
+    local on_done = type(opts.on_done) == "function" and opts.on_done or nil
     local path = current_file(self)
-    if not path then return end
+    if not path then
+        if on_done then on_done(false, "no_file") end
+        return false
+    end
     if not self:logged_in() then
-        self:info("请先登录微信读书账号。")
-        return
+        if silent then
+            if on_done then on_done(false, "not_logged_in") end
+        else
+            self:info("请先登录微信读书账号。")
+        end
+        return false
     end
     local entry = current_entry(self)
     if not entry or not entry.binding then
         -- MiuRead downloaded books are auto-bound from the known WeRead id.
         if not self:_external_auto_bind_miuread_book() then
-            self:info("请先把本地书匹配到微信读书书籍。")
-            return
+            if silent then
+                if on_done then on_done(false, "no_binding") end
+            else
+                self:info("请先把本地书匹配到微信读书书籍。")
+            end
+            return false
         end
     end
     if self._external_annotation_sync then
-        self:toast("划线与想法同步正在进行", 2)
-        return
+        if silent then
+            if on_done then on_done(false, "already_running") end
+        else
+            self:toast("划线与想法同步正在进行", 2)
+        end
+        return false
+    end
+    local function start_quiet()
+        local ok, err = xpcall(function()
+            self:_sync_external_annotations_start({ silent = true, on_done = on_done })
+        end, debug.traceback)
+        if not ok and on_done then
+            on_done(false, tostring(err or "unknown"))
+        end
+    end
+    if silent then
+        if not self:is_online() then
+            if on_done then on_done(false, "offline") end
+            return false
+        end
+        UIManager:scheduleIn(.05, start_quiet)
+        return true
     end
     self:online("同步划线与想法", function()
         self:_sync_external_annotations_start()
     end)
+    return true
 end
 
-function M:_sync_external_annotations_start()
+function M:_sync_external_annotations_start(options)
+    local opts = type(options) == "table" and options or {}
+    local silent = opts.silent == true
+    local on_done = type(opts.on_done) == "function" and opts.on_done or nil
     local path = current_file(self)
     local entry = current_entry(self)
     local binding = entry and entry.binding
@@ -538,6 +576,7 @@ function M:_sync_external_annotations_start()
         binding = binding,
         cancelled = false,
         backgrounded = false,
+        signal_sent = false,
     }
 
     local function request_is_current()
@@ -556,6 +595,12 @@ function M:_sync_external_annotations_start()
         end
     end
 
+    local function complete_signal(ok, err)
+        if request.signal_sent then return end
+        request.signal_sent = true
+        if on_done then on_done(ok, err) end
+    end
+
     local function cancel_request()
         if request.cancelled then return end
         request.cancelled = true
@@ -566,18 +611,23 @@ function M:_sync_external_annotations_start()
     local function fail_request(err)
         if not request_is_current() then
             finish_request()
+            complete_signal(false, "interrupted")
             return
         end
         finish_request()
         logger.warn("[MiuRead][ExternalAnnotations] sync interrupted:", tostring(err))
-        self:info("划线与想法同步被中断：\n" .. U.first_line(tostring(err or "未知错误"), 160)
-            .. "\n\n已下载的进度已保存，重新同步即可继续。")
+        complete_signal(false, tostring(err or "unknown"))
+        if not silent then
+            self:info("划线与想法同步被中断：\n" .. U.first_line(tostring(err or "未知错误"), 160)
+                .. "\n\n已下载的进度已保存，重新同步即可继续。")
+        end
     end
 
     local function schedule_step(callback, delay)
         UIManager:scheduleIn(delay or 0.1, function()
             if not request_is_current() then
                 if self._external_annotation_sync == request then finish_request() end
+                complete_signal(false, "interrupted")
                 return
             end
             local ok, err = xpcall(callback, debug.traceback)
@@ -602,27 +652,32 @@ function M:_sync_external_annotations_start()
         }
     end
 
-    local progress = DownloadProgress:new{
-        title = "同步划线与想法",
-        cancel_text = "取消同步",
-        background_text = "后台同步",
-        on_cancel = function()
-            cancel_request()
-        end,
-        on_background = function()
-            request.backgrounded = true
-            if request.progress then
-                request.progress:close("background")
-                request.progress = nil
-            end
-            self:toast("已转入后台继续同步，完成后会提醒", 2)
-        end,
-        on_close = function() end,
-    }
-    request.progress = progress
+    if silent then
+        request.progress = nil
+    else
+        local progress = DownloadProgress:new{
+            title = "同步划线与想法",
+            cancel_text = "取消同步",
+            background_text = "后台同步",
+            on_cancel = function()
+                cancel_request()
+            end,
+            on_background = function()
+                request.backgrounded = true
+                if request.progress then
+                    request.progress:close("background")
+                    request.progress = nil
+                end
+                self:toast("已转入后台继续同步，完成后会提醒", 2)
+            end,
+            on_close = function() end,
+        }
+        request.progress = progress
+        self._external_annotation_sync = request
+        progress:show()
+        report_progress("prepare", 0, { message = "正在准备同步……" })
+    end
     self._external_annotation_sync = request
-    progress:show()
-    report_progress("prepare", 0, { message = "正在准备同步……" })
 
     local download_next_chapter
     local download_current_review_batch
@@ -679,8 +734,11 @@ function M:_sync_external_annotations_start()
         finish_request()
         logger.info("[MiuRead][ExternalAnnotations] sync completed:",
             "located=", tostring(stats.located), "total=", tostring(stats.total))
-        self:info("同步完成：" .. tostring(stats.located) .. "/"
-            .. tostring(stats.total) .. " 条划线已匹配。")
+        complete_signal(true, nil)
+        if not silent then
+            self:info("同步完成：" .. tostring(stats.located) .. "/"
+                .. tostring(stats.total) .. " 条划线已匹配。")
+        end
     end
 
     finish_current_chapter = function()
@@ -954,8 +1012,11 @@ function M:_sync_external_annotations_start()
         finish_request()
         logger.info("[MiuRead][ExternalAnnotations] personal sync completed:",
             "located=", tostring(stats.located), "total=", tostring(stats.total))
-        self:info("同步完成：" .. tostring(stats.located) .. "/"
-            .. tostring(stats.total) .. " 条个人划线已匹配。")
+        complete_signal(true, nil)
+        if not silent then
+            self:info("同步完成：" .. tostring(stats.located) .. "/"
+                .. tostring(stats.total) .. " 条个人划线已匹配。")
+        end
         return true
     end
 
