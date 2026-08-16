@@ -18,6 +18,30 @@ MiuRead（觅阅 · 微信读书助手）是面向 KOReader 的非官方微信�
 - **阅读进度冲突自动处理**：默认自动采用云端位置（可在同步设置中改为询问），云端来源不一致时仍保留人工选择。
 - **默认下划线**：觅阅识别到的书籍中，选词后默认直接下划线，不再二次确认样式；点击已有划线仍可进行笔记、样式、删除等操作。
 
+## UI 操作示意图
+
+以下 SVG 图放在 `docs/diagrams/`，用于快速理解 MiuRead 的主要操作逻辑。生成脚本：`docs/diagrams/generate_ui_diagrams.py`（纯 Python 标准库，可重复生成）。
+
+### 首页操作逻辑
+
+<img src="docs/diagrams/home-ui-logic.svg" alt="MiuRead 首页操作逻辑" width="860">
+
+### 阅读页操作逻辑
+
+<img src="docs/diagrams/reader-ui-logic.svg" alt="MiuRead 阅读页操作逻辑" width="860">
+
+### 划线交互流程
+
+<img src="docs/diagrams/highlight-interaction-flow.svg" alt="MiuRead 划线交互流程" width="860">
+
+### 下载与动态批注流程
+
+<img src="docs/diagrams/download-dynamic-annotations-flow.svg" alt="MiuRead 下载与动态批注流程" width="860">
+
+### 静默同步状态机
+
+<img src="docs/diagrams/sync-scheduler-state.svg" alt="MiuRead 静默同步状态机" width="860">
+
 ## Installation
 
 1. 在 GitHub Releases 下载最新正式版 `miuread-vX.Y.Z-full.zip`。
