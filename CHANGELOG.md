@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- 暂无。
+
+## 4.5.25 - 2026-08-16
+
 - 修复 真机 crash.log 定位：plugin_home_content 缺 `unpack_args` 局部导致打开主页崩溃；同源扫描又发现 plugin_navigation 缺 ButtonDialog/unpack_args、plugin_ui_menus 缺 HOME_SESSION/unpack_args，全部补齐；结构守卫扩展为覆盖普通局部变量引用。
 
 - 架构 store.lua 分层第一批：抽出 `miuread/store_defaults`（持久化默认值单一来源）与 `miuread/store_downloads`（下载状态/队列 reader，8 个方法），Store 保留门面并在加载时合并；新增 5 个纯逻辑单测与结构守卫。

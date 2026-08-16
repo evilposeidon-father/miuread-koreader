@@ -40,18 +40,25 @@ class VersionConsistencyTests(unittest.TestCase):
         version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', meta).group(1)
         self.assertIn(f"## {version}", changelog)
 
-    def test_changelog_unreleased_records_lua_suite(self):
+    def test_changelog_unreleased_is_placeholder(self):
         changelog = read_text("CHANGELOG.md")
         self.assertIn("## Unreleased", changelog)
-        self.assertIn("Lua 5.1", changelog)
-        self.assertIn("smoke", changelog)
+        self.assertIn("- 暂无。", changelog)
+
+    def test_changelog_current_version_records_lua_suite(self):
+        changelog = read_text("CHANGELOG.md")
+        meta = read_text("miuread.koplugin/_meta.lua")
+        version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', meta).group(1)
+        section = changelog.split(f"## {version}")[1].split("\n## ")[0]
+        self.assertIn("Lua 5.1", section)
+        self.assertIn("smoke", section)
 
     def test_changelog_current_version_records_controller_splits(self):
         changelog = read_text("CHANGELOG.md")
         meta = read_text("miuread.koplugin/_meta.lua")
         version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', meta).group(1)
         section = changelog.split(f"## {version}")[1].split("\n## ")[0]
-        for name in ["plugin_update", "plugin_sync", "plugin_download", "plugin_reader"]:
+        for name in ["plugin_home_content", "plugin_navigation", "store_defaults", "progress_position"]:
             self.assertIn(name, section)
 
 

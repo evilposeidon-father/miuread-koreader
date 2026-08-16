@@ -5,15 +5,15 @@
 ## 统计
 
 - 代码文件：163
-- 代码行数：约 67261
+- 代码行数：约 67280
 - 主要语言：.lua 158、.py 4、.json 1
-- 项目大小：2979.2 KB
-- 最后更新：2026-08-16 03:38
-- 摘要生成时间：2026-08-16 03:41
+- 项目大小：2979.8 KB
+- 最后更新：2026-08-16 08:35
+- 摘要生成时间：2026-08-16 08:36
 
 ## 文件清单（前 60）
 
-- `miuread.koplugin\miuread\plugin_home_content.lua`（3523 行）
+- `miuread.koplugin\miuread\plugin_home_content.lua`（3525 行）
 - `miuread.koplugin\miuread\sync.lua`（3390 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
 - `miuread.koplugin\main.lua`（2727 行）
@@ -22,7 +22,7 @@
 - `miuread.koplugin\miuread\plugin_download.lua`（1774 行）
 - `miuread.koplugin\miuread\thought_native_popup.lua`（1458 行）
 - `miuread.koplugin\miuread\store.lua`（1380 行）
-- `miuread.koplugin\miuread\plugin_navigation.lua`（1353 行）
+- `miuread.koplugin\miuread\plugin_navigation.lua`（1367 行）
 - `miuread.koplugin\miuread\annotation_sync.lua`（1294 行）
 - `miuread.koplugin\miuread\reader.lua`（1183 行）
 - `miuread.koplugin\miuread\download_task.lua`（1175 行）
@@ -36,7 +36,7 @@
 - `miuread.koplugin\miuread\http.lua`（797 行）
 - `miuread.koplugin\miuread\footnotes.lua`（794 行）
 - `miuread.koplugin\miuread\local_annotation_database.lua`（775 行）
-- `miuread.koplugin\miuread\plugin_ui_menus.lua`（760 行）
+- `miuread.koplugin\miuread\plugin_ui_menus.lua`（762 行）
 - `miuread.koplugin\miuread\plugin_preferences.lua`（721 行）
 - `miuread.koplugin\miuread\legacy\read_report_worker.lua`（702 行）
 - `miuread.koplugin\miuread\plugin_repair.lua`（682 行）
@@ -69,7 +69,7 @@
 - `miuread.koplugin\miuread\plugin_update.lua`（369 行）
 - `miuread.koplugin\miuread\reader_control_center.lua`（368 行）
 - `miuread.koplugin\miuread\store_identity.lua`（358 行）
-- `tests\test_project_invariants.py`（356 行）
+- `tests\test_project_invariants.py`（357 行）
 - `miuread.koplugin\miuread\cache_cleanup_task.lua`（354 行）
 - `miuread.koplugin\miuread\plugin_thought_popup.lua`（342 行）
 - `miuread.koplugin\miuread\reader_typography_dialog.lua`（331 行）
