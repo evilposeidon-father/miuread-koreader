@@ -1,3 +1,5 @@
+-- MiuRead 觅阅 · 微信读书助手
+-- 许可证：AGPL-3.0-only。
 local RawButtonDialog=require("ui/widget/buttondialog")
 local RawConfirmBox=require("ui/widget/confirmbox")
 local RawInfoMessage=require("ui/widget/infomessage")
