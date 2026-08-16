@@ -5,6 +5,7 @@ Stubs.install()
 
 local ExternalSync = require("miuread.external_annotation_sync")
 local ReaderController = require("miuread.plugin_reader")
+local AnnotationSync = require("miuread.annotation_sync")
 
 local T = {}
 
@@ -139,6 +140,20 @@ function T.test_highlight_defaults_respect_explicit_style_after_first_apply()
     plugin.ui.doc_settings:saveSetting("highlight_drawer", "invert")
     plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
     B.eq(plugin.ui.view.highlight.saved_drawer, "invert", "explicit style wins after first apply")
+end
+
+function T.test_progress_anchor_helpers()
+    B.eq(AnnotationSync.is_progress_anchor({ local_id = "ko:miu-progress-anchor", kind = "bookmark" }), true)
+    B.eq(AnnotationSync.is_progress_anchor({ local_id = "ko:other", kind = "bookmark" }), false)
+    B.eq(AnnotationSync.is_progress_anchor({ local_id = "ko:miu-progress-anchor", kind = "highlight" }), false)
+    B.eq(AnnotationSync.anchor_mark_text("  一段文字  "), "觅阅进度锚点：一段文字")
+    local dupes = AnnotationSync.find_anchor_duplicates({
+        { bookmarkId = "b1", markText = "觅阅进度锚点：旧位置" },
+        { bookmarkId = "b2", markText = "普通书签" },
+        { bookmarkId = "b3", range = "1-2" },
+    })
+    B.eq(#dupes, 1, "only prefixed anchor bookmarks are duplicates")
+    B.eq(dupes[1].remote_id, "b1")
 end
 
 return T

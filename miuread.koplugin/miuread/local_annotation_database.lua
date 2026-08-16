@@ -260,6 +260,19 @@ function LocalAnnotationDatabase.snapshot(store, book_id, annotations, source_pa
                         now, row.local_id
                     ):step()
                     update:clearbind():reset()
+                    -- The progress anchor is one moving bookmark. Whenever a
+                    -- snapshot sees a new position, push it back into pending
+                    -- so sync_book can delete the previous remote anchor and
+                    -- upload the new one.
+                    if row.local_id == "ko:miu-progress-anchor" then
+                        local touch = conn:prepare([[
+                            UPDATE local_annotations
+                               SET sync_state = 'local_only', updated_at = ?
+                             WHERE local_id = ? AND book_id = ?
+                        ]])
+                        touch:bind(now, row.local_id, row.book_id):step()
+                        touch:close()
+                    end
                     count = count + 1
                 end
             end
