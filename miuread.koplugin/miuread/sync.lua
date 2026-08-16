@@ -1038,7 +1038,12 @@ function Sync:_save_local_snapshot(book_id,position)
     if type(position)~="table" or tostring(book_id or "")=="" then return end
     local snapshot=U.copy(position)
     snapshot.captured_at=os.time()
-    self.store:save_session(book_id,{local_position_snapshot=snapshot})
+    -- Defer the disk flush: this runs on periodic source-position updates
+    -- during reading, so an immediate flush would hit the e-ink device with a
+    -- synchronous settings write each interval. The debounced session flush
+    -- below persists it shortly after without blocking the page-turn loop.
+    self.store:save_session(book_id,{local_position_snapshot=snapshot},false)
+    self:_defer_session_flush(.8)
 end
 
 function Sync:_recover_auth_once(channel,error,on_done,force)
