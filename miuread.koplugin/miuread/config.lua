@@ -1,9 +1,13 @@
 local C = {
     NAME = "觅阅 · 微信读书助手",
-    VERSION = "4.5.29",
+    VERSION = "4.5.33",
     SCHEMA = 112,
     PLUGIN_DIR = "miuread.koplugin",
     DATA_DIR = "miuread",
+
+    -- 微信读书 Web 阅读器上报载荷使用的逆向 reader token（非用户可配）。
+    -- 微信读书侧轮换时只需改这里，protocol.lua 从这里读取。
+    READER_TOKEN = "3c5c8717f3daf09iop3423zafeqoi",
 
     -- 正式版更新清单由 tag 发布流程生成，并作为固定 stable-channel Release
     -- 资源提供。main/update.json 仅用于把 4.1.2 等旧正式版桥接到 4.3.0；

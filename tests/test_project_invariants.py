@@ -336,21 +336,30 @@ class MainLuaStructureTests(unittest.TestCase):
         self.assertIn("local HomeWidget = InputContainer:extend", home_view)
 
 
-class LegacyNetworkBoundaryTests(unittest.TestCase):
-    def test_only_adapter_requires_legacy_modules(self):
+class LegacyRetirementTests(unittest.TestCase):
+    def test_no_legacy_requires_remain(self):
         offenders = []
-        for path in sorted((PLUGIN / "miuread").glob("*.lua")):
+        for path in sorted((PLUGIN / "miuread").rglob("*.lua")):
             text = path.read_text(encoding="utf-8")
-            if 'require("miuread.legacy.' in text or 'require("miuread.legacy")' in text:
-                if path.name != "legacy_adapter_worker.lua":
-                    offenders.append(path.name)
+            if 'require("miuread.legacy' in text or "legacy_adapter_worker" in text:
+                offenders.append(str(path.relative_to(PLUGIN)))
         self.assertEqual([], offenders)
 
-    def test_legacy_readme_documents_decision(self):
+    def test_legacy_dir_removed(self):
+        self.assertFalse((PLUGIN / "miuread" / "legacy").exists())
+
+    def test_read_report_modules_present(self):
+        for name in [
+            "read_report_transport.lua",
+            "read_report_worker.lua",
+            "read_report_context.lua",
+            "read_report_adapter.lua",
+        ]:
+            self.assertTrue((PLUGIN / "miuread" / name).exists(), name)
+
+    def test_legacy_retirement_documented(self):
         readme = (ROOT / "docs" / "legacy" / "README.md").read_text(encoding="utf-8")
-        self.assertIn("保留", readme)
-        self.assertIn("边界", readme)
-        self.assertIn("迁移方向", readme)
+        self.assertIn("退役", readme)
 
 
 class PackageStructureTests(unittest.TestCase):

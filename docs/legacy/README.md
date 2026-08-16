@@ -1,17 +1,17 @@
-# Legacy 网络层（保留并圈定边界）
+# Legacy 网络层（已退役）
 
-本目录的模块用于**阅读时长上报**（read report）。它们基于早期微信读书接口实现，
-由 `miuread.legacy_adapter_worker` 统一包装后供 `read_report_service` 与 `sync`
+本目录原本存放**阅读时长上报**（read report）的早期微信读书接口实现，由
+`miuread.legacy_adapter_worker` 统一包装后供 `read_report_service` 与 `sync`
 使用。
 
-## 现状
+## 退役记录（MiuRead 4.5.33）
 
-- **保留**：阅读时长上报仍依赖 `legacy/read_report_worker` 及配套的
-  `client` / `content` / `cookie` / `crypto` / `weread`。
-- **边界**：除 `legacy_adapter_worker` 外，其他模块不得直接 require
-  `miuread.legacy.*`。新功能必须使用 `miuread.http` / `miuread.api`。
+- 密码学（MD5/SHA-256、签名/混淆）并入 `miuread.digests` + `miuread.protocol`。
+- reader token 收敛到 `miuread.config.READER_TOKEN`。
+- 传输层迁到 `miuread.read_report_transport`（基于 `miuread.http`，单次尝试、
+  退避由 `read_report_service` 负责）。
+- 阅读上下文/目录纯逻辑迁到 `miuread.read_report_context`。
+- 工作器迁到 `miuread.read_report_worker`，适配器迁到
+  `miuread.read_report_adapter`。
 
-## 迁移方向
-
-当阅读时长上报迁移到新 `http` / `api` 层后，本目录可以整体删除，只保留
-`legacy_adapter_worker` 的调用方改造记录。
+原 `legacy/` 目录已删除。新功能一律使用 `miuread.http` / `miuread.api`。

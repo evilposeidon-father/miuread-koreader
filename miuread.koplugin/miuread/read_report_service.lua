@@ -1,6 +1,6 @@
 local Json = require("miuread.json")
 local U = require("miuread.util")
-local Adapter = require("miuread.legacy_adapter_worker")
+local Adapter = require("miuread.read_report_adapter")
 local Config = require("miuread.config")
 
 local Service = {}

@@ -1,7 +1,7 @@
--- Legacy network boundary: this adapter is the ONLY module outside
--- miuread.legacy/ that may require legacy read-report modules. New features
--- must use miuread.http / miuread.api instead.
-local Legacy = require("miuread.legacy.read_report_worker")
+-- Read-report adapter: wraps the read-report worker for read_report_service.
+-- The legacy network stack was removed in MiuRead 4.5.33; the worker now uses
+-- miuread.http through miuread.read_report_transport.
+local Legacy = require("miuread.read_report_worker")
 
 local Adapter = {}
 

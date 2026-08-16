@@ -1,7 +1,7 @@
-local Cookie = require("miuread.legacy.cookie")
-local Client = require("miuread.legacy.client")
-local Content = require("miuread.legacy.content")
-local WeRead = require("miuread.legacy.weread")
+local Cookies = require("miuread.cookies")
+local ReadReportTransport = require("miuread.read_report_transport")
+local Content = require("miuread.read_report_context")
+local Protocol = require("miuread.protocol")
 local Http = require("miuread.http")
 local U = require("miuread.util")
 
@@ -56,7 +56,8 @@ function MemorySettings:flush()
 end
 
 function MemorySettings:is_cookie_configured()
-    return Cookie.has_login_cookie(self.data.cookies or {})
+    local cookies = self.data.cookies or {}
+    return cookies.wr_skey and #cookies.wr_skey >= 8
 end
 
 local function normalize_progress_ratio(value)
@@ -261,7 +262,7 @@ local function refresh_context(client, book_id, book, force)
     book = deepcopy(book or {})
     book.book_id = book.book_id or book.bookId or book_id
     book.title = book.title or book_id
-    book.reader_url = book.reader_url or WeRead.reader_url(book_id)
+    book.reader_url = book.reader_url or Protocol.reader_url(book_id)
 
     local now = os.time()
     local context_age = now - (tonumber(book.read_context_updated_at) or 0)
@@ -311,7 +312,7 @@ local function refresh_context(client, book_id, book, force)
     book.chapter_uid = chapter_uid(selected) or book.chapter_uid
     book.chapter_idx = chapter_index(selected, book.chapter_idx)
     book.chapter_word_count = trusted_words(book, selected)
-    book.app_id = book.app_id or WeRead.web_app_id()
+    book.app_id = book.app_id or Protocol.app_id()
     book.read_context_updated_at = now
     book.read_context_ready = book.psvts ~= nil and tostring(book.psvts) ~= ""
         and book.chapter_uid ~= nil
@@ -474,15 +475,15 @@ end
 local function build_payload(book_id, elapsed_seconds, book, progress_ratio)
     local position, position_error = estimate_position(book, progress_ratio)
     if not position then return nil, position_error end
-    local payload=WeRead.make_read_payload{
+    local payload=Protocol.read_fields{
         book_id = book_id,
         chapter_uid = position.chapter_uid,
-        chapter_idx = position.chapter_idx,
+        chapter_index = position.chapter_idx,
         chapter_offset = position.chapter_offset,
         progress = position.progress,
         summary = book.summary or "",
-        elapsed_seconds = elapsed_seconds,
-        app_id = book.app_id or WeRead.web_app_id(),
+        elapsed = elapsed_seconds,
+        app_id = book.app_id or Protocol.app_id(),
         psvts = book.psvts,
         pclts = book.pclts,
         token = book.token,
@@ -514,7 +515,7 @@ local function attempt_report(client, book_id, elapsed_seconds, book, progress_r
         return false, nil, tostring(position_or_error or "reading position unavailable"), "position", nil,
             {payload_fields_complete=false}
     end
-    local referer = book.reader_url or WeRead.reader_url(book_id)
+    local referer = book.reader_url or Protocol.reader_url(book_id)
     local ok, result, code, headers = pcall(function()
         return client:report_read(payload, referer)
     end)
@@ -591,7 +592,8 @@ function Worker.run(job)
         wr_wrpa = job.wr_wrpa or "",
         books = {},
     }
-    local client = Client:new(settings)
+    local http = Http:new(ReadReportTransport.memory_store(settings))
+    local client = ReadReportTransport:new(http)
     local book = deepcopy(job.book or {})
     local context_changed = false
     book.book_id = book.book_id or book.bookId or book_id

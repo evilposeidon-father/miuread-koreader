@@ -6,6 +6,26 @@
 
 - 暂无。
 
+## 4.5.33 - 2026-08-16
+
+- 架构 退役 legacy 网络层第三步（完成）：把阅读时长上报传输迁到 `miuread.read_report_transport`（基于 `miuread.http`，所有请求 `retries=0` 单次尝试、退避仍由 `read_report_service` 负责），阅读上下文/目录迁到 `miuread.read_report_context`，工作器迁到 `miuread.read_report_worker`，适配器迁到 `miuread.read_report_adapter`，整个 `miuread/legacy` 目录删除。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 125 个用例：新增 read_report_transport 请求形态测试（单次尝试/鉴权/Bearer/Origin/Referer）；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
+## 4.5.32 - 2026-08-16
+
+- 架构 退役 legacy 网络层第二步：把 `miuread.legacy.client` 从 839 行精简到 275 行，删除已被 `miuread.api` / `miuread.auth` 取代的 QR 登录、公众号文章、章节划线、书评批次、web 进度等死代码，只保留阅读时长上报所需的 `request/post_json/get_text/gateway/get_progress/report_read`。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）保持 121 个用例全绿，验证精简后的 legacy client 仍被主插件加载链完整引用；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
+## 4.5.31 - 2026-08-16
+
+- 架构 把硬编码的微信读书 Web reader token 从 `protocol.lua` 抽到 `config.lua` 的 `READER_TOKEN` 常量，`protocol.lua` 改为从配置读取（保留旧值兜底），legacy 层经 `miuread.legacy.weread` 自动继承，token 轮换时只需改一处。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 121 个用例：新增 reader token 单一来源断言；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
+## 4.5.30 - 2026-08-16
+
+- 架构 退役 legacy 网络层第一步：删除 `miuread.legacy.crypto`（重复的 MD5/SHA-256），并把 `miuread.legacy.weread` 的签名/混淆/reader URL/上报载荷改为 `miuread.protocol` + `miuread.digests` 的薄委托，消除两套签名算法并存，收窄 legacy 栈到 `client/content/cookie/read_report_worker`。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 120 个用例：新增 legacy/protocol 密码学等价性与黄金向量回归；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.29 - 2026-08-16
 
 - 修复 选中文本后直接划线未生效：觅阅识别到的书籍在阅读期间临时把 KOReader 默认长按动作切到「划线」并在关闭书籍时恢复原设置；划线确认改为直接保存，不再依赖 `highlight_prompt` 为空，确保跳过样式选择直接生成下划线。

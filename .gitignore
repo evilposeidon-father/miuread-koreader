@@ -7,3 +7,5 @@ release.env
 __pycache__/
 *.pyc
 .tools/
+.dsh/
+AGENTS.md
