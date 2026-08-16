@@ -6,7 +6,8 @@
 -- Everything is injectable and testable without KOReader.
 
 local U = require("miuread.util")
-local BookIntegrity = require("miuread.book_integrity")
+local Lazy = require("miuread.lazy")
+local BookIntegrity = Lazy("miuread.book_integrity")
 
 local ProgressPosition = {}
 

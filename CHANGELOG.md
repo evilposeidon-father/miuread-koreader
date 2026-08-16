@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.45 - 2026-08-17
+
+- 性能 启动加载优化：把下载/划线/内容抓取等低频模块（downloader/content_reader/annotations/annotation_sync/download_* /external_annotation_sync 等）改为用到再加载（Lazy），启动无头基准 341ms → 217ms、加载模块 174 → 157，恢复并超过重构前基线，翻页路径不受影响。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）保持 160 个用例全绿；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.44 - 2026-08-17
 
 - 修复 登录过期误显示为「已登录」：当本地凭证存在但微信授权已在服务端失效（-2011/-2012/-2041）时，`logged_in()` 现在返回未登录，界面会提示重新扫码而不是继续显示「已登录」。
