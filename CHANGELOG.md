@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.37 - 2026-08-16
+
+- 架构 拆 reader.lua 上帝模块第一批：抽出 `miuread.content_classify` 深模块（16 个纯函数：章节/封面/不可读判定、可见文本、内容标记、空章与服务错误分类），reader.lua 从 1,183 行降至 1,040 行并保留本地别名委托。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 142 个用例：新增 content_classify 6 个纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.36 - 2026-08-16
 
 - 工程 补齐贡献与工程化配置：新增 `.luacheckrc`（Lua 5.1 lint 基线）、`CONTRIBUTING.md`（提交约定/目录结构/架构边界）、GitHub Issue 模板（Bug 报告/功能建议/讨论入口）与 PR 模板，向社区协作友好化对齐。
