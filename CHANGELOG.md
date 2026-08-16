@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.36 - 2026-08-16
+
+- 工程 补齐贡献与工程化配置：新增 `.luacheckrc`（Lua 5.1 lint 基线）、`CONTRIBUTING.md`（提交约定/目录结构/架构边界）、GitHub Issue 模板（Bug 报告/功能建议/讨论入口）与 PR 模板，向社区协作友好化对齐。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）保持 136 个用例全绿；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.35 - 2026-08-16
 
 - 架构 拆 plugin_home_content 上帝模块第一批：抽出 `miuread.home_network_metadata` 深模块（metadata_key/patch_has_data/patch_field_count/missing_fields/merge_patch 5 个纯函数），plugin_home_content 从 3,527 行降至 3,475 行并改为委托。
