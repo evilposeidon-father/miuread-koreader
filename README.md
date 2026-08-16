@@ -8,6 +8,16 @@ MiuRead（觅阅 · 微信读书助手）是面向 KOReader 的非官方微信�
 
 完整版本记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 
+## Highlights
+
+- **微信读书客户端**：搜索、书架、下载、阅读进度与阅读时间同步、扫码登录。
+- **单一 EPUB 版本**：下载只生成「纯净版」，不再需要单独下载「划线与想法版」；旧的划线与想法版文件继续可读，并在菜单中标注为旧版。
+- **动态划线与想法**：阅读时按「当前章 + 下一章」静默拉取微信读书划线与想法，随阅读推进自动补充；无需重新生成 EPUB，使用 XPointer overlay 直接绘制，支持取消与断点续传。
+- **本地书匹配**：任意重排本地 EPUB/TXT 可匹配微信读书书籍，同步个人划线/想法到当前书显示；阅读快捷面板提供 `云端划线`、`本地上传`、`显隐划线` 等图标。
+- **静默同步**：本地批注改动后自动上传，失败自动退避重试；主页同步入口点击一键同步、长按查看诊断。
+- **阅读进度冲突自动处理**：默认自动采用云端位置（可在同步设置中改为询问），云端来源不一致时仍保留人工选择。
+- **默认下划线**：觅阅识别到的书籍中，选词后默认直接下划线，不再二次确认样式；点击已有划线仍可进行笔记、样式、删除等操作。
+
 ## Installation
 
 1. 在 GitHub Releases 下载最新正式版 `miuread-vX.Y.Z-full.zip`。
@@ -15,17 +25,17 @@ MiuRead（觅阅 · 微信读书助手）是面向 KOReader 的非官方微信�
 3. 完整重启 KOReader。
 4. 后续正式版可使用 MiuRead 内置更新功能升级。
 
-## Local-book WeRead annotations (branch feature)
+## Development
 
-本分支新增「本地书划线与想法」能力：
+本仓库主要开发分支为 `feature/local-book-annotations`；正式版通过 `vX.Y.Z` tag 发布，tag、`miuread.koplugin/miuread/config.lua` 与 `miuread.koplugin/_meta.lua` 的版本保持一致。
 
-- 任意重排本地 EPUB/TXT 可匹配微信读书书籍，同步个人划线/想法到当前书显示
-- 无需重新生成 EPUB：使用 XPointer overlay 直接绘制划线
-- 同步支持取消与断点续传，每章/每批想法落 SQLite 后继续
-- 阅读快捷面板新增图标：`云端划线`、`本地上传`、`显隐划线`、`KO菜单`
-- 同步状态新增「上次定位方式 / 定位回退原因」用于排查进度偏移
+本地测试：
 
-> 该能力当前随本分支维护，尚未进入正式版 release 流程。
+```bash
+# Lua 5.1 无头测试（Windows 本地：.tools\lua51.exe tests/lua/run.lua）
+lua5.1 tests/lua/run.lua
+python -m unittest discover -s tests
+```
 
 ## OTA Update Channel
 
