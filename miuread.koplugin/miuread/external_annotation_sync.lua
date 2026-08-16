@@ -567,8 +567,14 @@ function M:_sync_external_annotations_start(options)
     local path = current_file(self)
     local entry = current_entry(self)
     local binding = entry and entry.binding
-    if not path or not binding then return end
-    if self._external_annotation_sync then return end
+    if not path or not binding then
+        if on_done then on_done(false, "no_context") end
+        return
+    end
+    if self._external_annotation_sync then
+        if on_done then on_done(false, "already_running") end
+        return
+    end
 
     local request = {
         path = path,

@@ -2,5 +2,5 @@ local Text = require("miuread.text")
 return {
     fullname = "觅阅 · 微信读书助手",
     description = Text.tr("Independent WeRead client for KOReader."),
-    version = "4.5.25",
+    version = "4.5.26",
 }

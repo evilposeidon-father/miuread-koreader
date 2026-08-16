@@ -1698,6 +1698,9 @@ function Plugin:_finalize_reader_instance_close(closing_path,session_generation,
 
     self:_prepare_reader_disappearance(options.reason or "document closed")
     if self.sync then self.sync:on_close() end
+    -- A pending reader-only cloud pull must not follow the plugin back to the
+    -- home screen where it would retry its gate forever.
+    self:_sync_scheduler_cancel("external_annotations")
 
     -- A confirmed switch has a new ReaderUI already alive. Never clear shared
     -- reader markers or start Home/post-reader work from the old plugin instance.

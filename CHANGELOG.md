@@ -6,6 +6,15 @@
 
 - 暂无。
 
+## 4.5.26 - 2026-08-16
+
+- 同步 新增 `miuread.sync_scheduler` 深模块：静默同步的防抖合并、门控（登录/在线/挂起/任务忙）、线性退避重试与状态标签（已同步/等待同步/同步中/N 项未完成）；支持 skip（不适用）与 busy（稍后重试且不计失败）两种动作结果，支持 `cancel_all` 与运行中再次请求的续排定时器；新增 10 个纯逻辑单测。
+- 同步 新增 `miuread.plugin_sync_center` 控制器：把调度器接上 UIManager 定时器、`logged_in`/`is_online`/忙碌门控与既有同步入口；本地批注改动后自动上传（快照成功后延迟约 12 秒）、打开书籍后自动静默拉取云端划线（延迟约 8 秒，失败自动退避重试）。
+- 同步 `external_annotation_sync` 增加静默模式：自动拉取不弹进度窗口/确认框，完成或中断通过回调汇报给调度器；阅读退出后取消未执行的云端拉取请求，避免回到主页后持续空转。
+- 同步 一键同步快捷键：主页头部「同步」点击 = 后台静默同步全部，长按 = 同步诊断；主页快捷面板同步块与阅读快捷按键「静默同步」接入同一入口；新增 KOReader 动作 `MiuReadSyncAll`（觅阅：静默同步全部）；主页同步状态文字在非已同步时显示 ● 圆点。
+- 同步 阅读进度冲突自动策略：默认「自动采用云端」（静默跳转并确认，不弹窗），可在同步设置/诊断中切换为「询问我」；云端来源不一致（网页 vs 官方）仍保留人工选择；决策下沉 `progress_decision.conflict_policy` 并新增单测。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件与控制器加载）增至 106 个用例（sync_center 7 个、scheduler 10 个、conflict_policy 等），Python 结构守卫纳入 `plugin_sync_center` 与 `Scheduler` 依赖声明；既有拆分控制器（plugin_home_content、plugin_navigation、store_defaults、progress_position 等）回归继续全绿。
+
 ## 4.5.25 - 2026-08-16
 
 - 修复 真机 crash.log 定位：plugin_home_content 缺 `unpack_args` 局部导致打开主页崩溃；同源扫描又发现 plugin_navigation 缺 ButtonDialog/unpack_args、plugin_ui_menus 缺 HOME_SESSION/unpack_args，全部补齐；结构守卫扩展为覆盖普通局部变量引用。
