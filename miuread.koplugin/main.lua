@@ -914,7 +914,14 @@ function Plugin:list(title,items,empty)
 end
 function Plugin:logged_in()
     local a=self.store:auth()
-    return tostring(a.api_key or "")~="" and next(a.cookies or {})~=nil
+    if tostring(a.api_key or "")=="" or next(a.cookies or {})==nil then return false end
+    -- A persisted login-expired error means the WeChat authorization was revoked
+    -- server-side even though local credentials still exist. Treat it as logged
+    -- out so the UI shows a re-login prompt instead of a misleading "已登录".
+    local health=self:_auth_health()
+    local code=tostring(health.last_error_code or "")
+    if code=="-2011" or code=="-2012" or code=="-2041" then return false end
+    return true
 end
 function Plugin:require_login()
     if not self:logged_in() then
