@@ -347,7 +347,7 @@ class LegacyNetworkBoundaryTests(unittest.TestCase):
         self.assertEqual([], offenders)
 
     def test_legacy_readme_documents_decision(self):
-        readme = (PLUGIN / "miuread" / "legacy" / "README.md").read_text(encoding="utf-8")
+        readme = (ROOT / "docs" / "legacy" / "README.md").read_text(encoding="utf-8")
         self.assertIn("保留", readme)
         self.assertIn("边界", readme)
         self.assertIn("迁移方向", readme)
