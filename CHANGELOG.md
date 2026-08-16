@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.42 - 2026-08-17
+
+- 阅读 阅读器 UI 决策落地：新增 `reader_ui.panel_mode` 开关（默认 `"native"`），目录/进度/字体/间距/书签/页面显示/页边距等 8 个与 KOReader 原生重复的面板改为委托「KOReader 高级菜单」，仅保留云划线/想法/同步等 MiuRead 专属能力；可切回 `"miuread"` 使用自绘面板。决策记录见 `docs/reader-ui-decision.md`。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）保持 160 个用例全绿；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.41 - 2026-08-17
 
 - 架构 统一命名边界：把内容抓取模块 `miuread.reader` 更名为 `miuread.content_reader`（保留 `Reader` 类名），与阅读 UI 控制器 `plugin_reader` / `reader_control_center` 等区分，消除「reader.lua 是内容抓取还是阅读 UI」的歧义；更新 main.lua / download_task.lua 三处 require。
