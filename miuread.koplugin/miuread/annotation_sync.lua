@@ -114,6 +114,34 @@ local function find_bookmark_match(records, range_key, expected_type, remote_id)
     end
 end
 
+-- The synthetic progress anchor is one moving WeRead bookmark. It must never
+-- be treated like a user bookmark, otherwise every reading session would add
+-- another remote bookmark and clutter the official bookmark list.
+local ANCHOR_LOCAL_ID = "ko:miu-progress-anchor"
+local ANCHOR_MARK_PREFIX = "觅阅进度锚点："
+
+function AnnotationSync.is_progress_anchor(row)
+    return type(row) == "table"
+        and tostring(row.local_id or "") == ANCHOR_LOCAL_ID
+        and tostring(row.kind or "") == "bookmark"
+end
+
+function AnnotationSync.anchor_mark_text(text)
+    return ANCHOR_MARK_PREFIX .. U.trim(tostring(text or ""))
+end
+
+function AnnotationSync.find_anchor_duplicates(cloud_rows)
+    local out = {}
+    for _, row in ipairs(cloud_rows or {}) do
+        local mark_text = scalar(row.markText or row.bookmarkText or row.rangeText or row.abstract or "")
+        if mark_text:sub(1, #ANCHOR_MARK_PREFIX) == ANCHOR_MARK_PREFIX then
+            local rid = bookmark_remote_id(row)
+            if rid ~= "" then out[#out + 1] = { remote_id = rid } end
+        end
+    end
+    return out
+end
+
 local function find_review_match(records, range_key, content, remote_id)
     range_key = tostring(range_key or "")
     remote_id = tostring(remote_id or "")
@@ -726,6 +754,9 @@ function AnnotationSync:_locate(row, chapter_ctx)
         local round = Coord.roundTrip(chapter_ctx.html, point)
         if not (round and round.ok) then return nil, "bookmark_range_roundtrip_failed" end
         local mark_text = visible_slice(map, text_start, 140)
+        if tostring(row.local_id or "") == ANCHOR_LOCAL_ID then
+            mark_text = AnnotationSync.anchor_mark_text(mark_text)
+        end
         if mark_text == "" then return nil, "bookmark_preview_empty" end
 
         local strong_source = anchor_source == "anchor_text"
@@ -1007,6 +1038,8 @@ function AnnotationSync:sync_book(book, record, options)
 
     for _, row in ipairs(rows) do
         local is_review = row.kind == "thought"
+        local anchor_update = AnnotationSync.is_progress_anchor(row)
+        local anchor_delete_failed = false
         local cloud_rows = is_review and cloud_reviews or cloud_bookmarks
         local cloud_error = is_review and review_error or bookmark_error
         local expected_type = row.kind == "bookmark" and 0 or 1
@@ -1183,14 +1216,49 @@ function AnnotationSync:sync_book(book, record, options)
                     row.coord_source = COORD_SOURCE
                     row.coord_verify = effective_verify
 
-                    if cloud_rows then
+                    if anchor_update then
+                        -- The progress anchor is one moving bookmark. Delete
+                        -- the previous remote bookmark before uploading the new
+                        -- position so the official bookmark list never grows.
+                        if row.remote_id ~= "" then
+                            local ok_del, del_err = pcall(self.api.remove_bookmark, self.api, row.remote_id, {
+                                bookId=book_id, chapterUid=row.chapter_uid,
+                            })
+                            if ok_del then
+                                LocalDB.mark_state(self.store, book_id, row.local_id, "local_only", {
+                                    remote_id="", range_key=located.range,
+                                    chapter_uid=row.chapter_uid, chapter_idx=row.chapter_idx,
+                                })
+                                row.remote_id = ""
+                                stage_log(row, "anchor_delete", true, "previous_anchor_removed")
+                            else
+                                anchor_delete_failed = true
+                                remember_error(row, "delete_pending", del_err, "anchor_delete", {
+                                    remote_id=row.remote_id, range_key=located.range,
+                                    chapter_uid=row.chapter_uid, chapter_idx=row.chapter_idx,
+                                })
+                            end
+                        end
+                        if not anchor_delete_failed and cloud_bookmarks then
+                            for _, dupe in ipairs(AnnotationSync.find_anchor_duplicates(cloud_bookmarks)) do
+                                if dupe.remote_id ~= row.remote_id then
+                                    pcall(self.api.remove_bookmark, self.api, dupe.remote_id, {
+                                        bookId=book_id, chapterUid=row.chapter_uid,
+                                    })
+                                end
+                            end
+                        end
+                        match, matched_id = false, nil
+                    elseif cloud_rows then
                         if is_review then
                             match, matched_id = find_review_match(cloud_rows, located.range, row.note, row.remote_id)
                         else
                             match, matched_id = find_bookmark_match(cloud_rows, located.range, expected_type, row.remote_id)
                         end
                     end
-                    if match then
+                    if anchor_delete_failed then
+                        stage_log(row, "anchor_delete", false, "previous_anchor_delete_failed")
+                    elseif match then
                         local rid = matched_id or (is_review and review_remote_id(match) or bookmark_remote_id(match))
                         LocalDB.mark_synced(self.store, book_id, row.local_id, rid, located.range, write_version or 0, {
                             chapter_uid=row.chapter_uid, chapter_idx=row.chapter_idx,

@@ -2144,7 +2144,7 @@ function Plugin:_local_annotation_chapter_context(item,current,kind,reason,prepa
     if manual and (kind=="highlight" or kind=="thought") then
         selected,before,after=self:_reader_annotation_selection_context(item,kind)
     end
-    local anchor=(kind=="bookmark" and (manual or reason=="progress_anchor" or reason=="suspend_anchor")) and self:_reader_bookmark_anchor_text(item) or ""
+    local anchor=(kind=="bookmark" and (manual or tostring(item.id or "")=="miu-progress-anchor")) and self:_reader_bookmark_anchor_text(item) or ""
 
     local standalone_uid=tostring(record.chapter_uid or "")
     if standalone_uid~="" then
@@ -2223,7 +2223,10 @@ function Plugin:_capture_local_annotation_snapshot(reason)
     if book_id=="" then return false end
     local annotations=(self.ui.annotation and self.ui.annotation.annotations)
         or (self.ui.bookmark and self.ui.bookmark.bookmarks) or {}
-    if reason=="manual_sync" or reason=="progress_anchor" or reason=="suspend_anchor" then
+    -- The synthetic progress anchor is a single, always-present bookmark row.
+    -- Keep it in every snapshot so ordinary annotation snapshots do not mark
+    -- it absent and accidentally delete its remote bookmark.
+    do
         local rows={}
         for _, item in ipairs(annotations) do rows[#rows+1]=item end
         local anchor=self:_progress_anchor_item()
