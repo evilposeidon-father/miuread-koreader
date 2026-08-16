@@ -7,7 +7,7 @@
 
 local U = require("miuread.util")
 local Lazy = require("miuread.lazy")
-local BookIntegrity = Lazy("miuread.book_integrity")
+local BookIntegrity = require("miuread.book_integrity")
 
 local ProgressPosition = {}
 

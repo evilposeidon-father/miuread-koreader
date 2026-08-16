@@ -2,7 +2,7 @@ local Protocol=require("miuread.protocol")
 local Lazy = require("miuread.lazy")
 local Codec=require("miuread.codec")
 local U=require("miuread.util")
-local DownloadResult=Lazy("miuread.download_result")
+local DownloadResult=require("miuread.download_result")
 local logger=require("logger")
 local Library={}; Library.__index=Library
 function Library:new(api,http,store)

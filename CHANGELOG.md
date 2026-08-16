@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.49 - 2026-08-17
+
+- 修复 闪退：回滚 4.5.45 对「实例化类」的惰性加载（downloader/download_task/annotations/annotation_sync/cache_cleanup_task/content_reader 等）。Lazy 代理不能作为实例 metatable，`X:new()` 生成的实例方法查找会失效导致首页 shelf 刷新时 `busy` 调用崩溃；这些类改回启动即加载，并新增结构守卫防回归。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）保持 165 个用例全绿；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.48 - 2026-08-17
 
 - 性能 后台任务/主线程 I/O 审计：确认同步/阅读时长均走子进程 + 门控 + 防抖，非翻页路径；修正源坐标快照在阅读期间周期性触发同步写盘（save_session 默认 flush），改为内存写入 + 防抖落盘，避免周期性同步 I/O 卡主线程。

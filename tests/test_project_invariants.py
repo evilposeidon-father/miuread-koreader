@@ -92,6 +92,28 @@ class UiPrimitiveDedupTests(unittest.TestCase):
 
 
 class MainLuaStructureTests(unittest.TestCase):
+    def test_instantiated_modules_are_eager(self):
+        # These classes are instantiated via X:new(...) in main.lua and use
+        # setmetatable({...}, self) as their instance metatable. A Lazy proxy
+        # cannot serve as a metatable, so they MUST stay eager requires.
+        main = read_text("miuread.koplugin/main.lua")
+        for module in [
+            "annotations",
+            "annotation_sync",
+            "downloader",
+            "download_task",
+            "cache_cleanup_task",
+            "content_reader",
+        ]:
+            self.assertIn(
+                f'require("miuread.{module}")', main,
+                f"{module} must be eagerly required (it is instantiated via :new())",
+            )
+            self.assertNotIn(
+                f'Lazy("miuread.{module}")', main,
+                f"{module} must not be Lazy (it is instantiated via :new())",
+            )
+
     def test_lazy_modules_exist(self):
         sources = ["miuread.koplugin/main.lua"]
         sources += [
