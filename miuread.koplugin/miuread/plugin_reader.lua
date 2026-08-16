@@ -157,6 +157,48 @@ function Plugin:_reader_panel_active()
     return self:_home_enabled() and reader.enabled~=false
 end
 
+function Plugin:_restore_miuread_highlight_action_policy()
+    if self._miuread_highlight_action_owned ~= true then return false end
+    self._miuread_highlight_action_owned = false
+    local previous_action=self._miuread_previous_highlight_action
+    local previous_single_word=self._miuread_previous_highlight_single_word
+    self._miuread_previous_highlight_action=nil
+    self._miuread_previous_highlight_single_word=nil
+    local settings=G_reader_settings
+    if not (settings and type(settings.delSetting)=="function"
+        and type(settings.saveSetting)=="function") then return false end
+    if previous_action==nil then
+        pcall(settings.delSetting,settings,"default_highlight_action")
+    else
+        pcall(settings.saveSetting,settings,"default_highlight_action",previous_action)
+    end
+    if previous_single_word==nil then
+        pcall(settings.delSetting,settings,"highlight_action_on_single_word")
+    else
+        pcall(settings.saveSetting,settings,"highlight_action_on_single_word",previous_single_word)
+    end
+    if type(settings.flush)=="function" then pcall(settings.flush,settings) end
+    return true
+end
+
+function Plugin:_apply_miuread_highlight_action_policy()
+    -- MiuRead books highlight on selection. KOReader only calls
+    -- showHighlightPrompt automatically when default_highlight_action is
+    -- "highlight"; with the factory "ask" default the selection menu is shown
+    -- instead, so the direct-under-line wrapper below would never run.
+    local settings=G_reader_settings
+    if not (settings and type(settings.readSetting)=="function"
+        and type(settings.saveSetting)=="function") then return false end
+    if self._miuread_highlight_action_owned ~= true then
+        self._miuread_previous_highlight_action=settings:readSetting("default_highlight_action")
+        self._miuread_previous_highlight_single_word=settings:readSetting("highlight_action_on_single_word")
+        self._miuread_highlight_action_owned=true
+    end
+    pcall(settings.saveSetting,settings,"default_highlight_action","highlight")
+    pcall(settings.saveSetting,settings,"highlight_action_on_single_word",true)
+    return true
+end
+
 function Plugin:_apply_miuread_highlight_defaults(book)
     -- Only for books MiuRead can identify. The default is a direct underline:
     -- no style/color prompt after selection, and tapping an existing highlight
@@ -175,17 +217,32 @@ function Plugin:_apply_miuread_highlight_defaults(book)
     local ok_read,saved=pcall(settings.readSetting,settings,"highlight_drawer")
     view.highlight.saved_drawer = ok_read and tostring(saved or "underscore") or "underscore"
     if view.highlight.saved_drawer=="" then view.highlight.saved_drawer="underscore" end
+    if view.highlight.disabled~=false then view.highlight.disabled=false end
 
     local highlight=self.ui.highlight
     if type(highlight.showHighlightPrompt)=="function" and highlight._miuread_force_direct_highlight~=true then
-        local original=highlight.showHighlightPrompt
-        highlight.showHighlightPrompt=function(this,caller_callback,prompt)
-            -- `false` means: do not open the style/color selector, save the
-            -- highlight immediately with the configured drawer.
-            return original(this,caller_callback,false)
+        highlight.showHighlightPrompt=function(this,caller_callback)
+            -- Always take the direct-save path. Passing `false` to KOReader's
+            -- native implementation is not enough: `prompt = prompt or
+            -- G_reader_settings:readSetting("highlight_prompt")` treats false
+            -- as absent and falls back to the user's global prompt preference,
+            -- which can still open the style/color selector.
+            if this.highlight_dialog then
+                UIManager:close(this.highlight_dialog)
+                this.highlight_dialog=nil
+            end
+            if this.hold_pos and not this.selected_text then
+                this:highlightFromHoldPos()
+            end
+            if not (this.selected_text and this.selected_text.pos0 and this.selected_text.pos1) then return end
+            local index=this:saveHighlight(true)
+            this:clear()
+            if caller_callback then caller_callback(index) end
         end
         highlight._miuread_force_direct_highlight=true
     end
+
+    self:_apply_miuread_highlight_action_policy()
     return true
 end
 

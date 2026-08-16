@@ -99,16 +99,33 @@ end
 local function fake_reader_plugin()
     local plugin = {}
     ReaderController.install(plugin)
+    local highlight = {
+        prompt_seen = nil,
+        selected_text = { text = "测试", pos0 = { page = 1 }, pos1 = { page = 1 } },
+        hold_pos = nil,
+        highlight_dialog = nil,
+        saved_index = nil,
+        showHighlightPrompt = function(self, caller_callback, prompt)
+            self.prompt_seen = prompt
+            self.saved_index = 1
+            self:clear()
+            if caller_callback then caller_callback(1) end
+            return true
+        end,
+        saveHighlight = function(self, extend_to_sentence)
+            self.saved_index = 42
+            return 42
+        end,
+        clear = function(self)
+            self.selected_text = nil
+        end,
+        highlightFromHoldPos = function(self)
+            self.selected_text = { text = "长按", pos0 = { page = 1 }, pos1 = { page = 1 } }
+        end,
+    }
     plugin.ui = {
         view = { highlight = { saved_drawer = "lighten" } },
-        highlight = {
-            prompt_seen = nil,
-            showHighlightPrompt = function(self, caller_callback, prompt)
-                self.prompt_seen = prompt
-                if caller_callback then caller_callback(1) end
-                return true
-            end,
-        },
+        highlight = highlight,
         doc_settings = {},
     }
     function plugin.ui.doc_settings:has(key) return self.values and self.values[key] ~= nil end
@@ -121,25 +138,84 @@ local function fake_reader_plugin()
     return plugin
 end
 
-function T.test_highlight_defaults_are_underline_and_direct()
-    local plugin = fake_reader_plugin()
-    B.eq(plugin:_apply_miuread_highlight_defaults({ book_id = "1" }), true)
-    B.eq(plugin.ui.view.highlight.saved_drawer, "underscore", "default drawer is underline")
-    B.eq(plugin.ui.doc_settings:readSetting("highlight_drawer"), "underscore")
-    B.eq(plugin.ui.doc_settings:has("miuread_highlight_underline_applied"), true)
+local function fake_reader_settings(data)
+    return {
+        readSetting = function(_, key, default)
+            if data[key] ~= nil then return data[key] end
+            return default
+        end,
+        saveSetting = function(_, key, value)
+            data[key] = value
+        end,
+        delSetting = function(_, key)
+            data[key] = nil
+        end,
+        flush = function() end,
+    }
+end
 
-    -- The wrapped prompt must force the direct path: false = no style selector.
-    plugin.ui.highlight:showHighlightPrompt(nil)
-    B.eq(plugin.ui.highlight.prompt_seen, false, "second confirmation disabled")
+local function with_fake_reader_settings(data, fn)
+    local old = rawget(_G, "G_reader_settings")
+    _G.G_reader_settings = fake_reader_settings(data)
+    local ok, err = pcall(fn)
+    _G.G_reader_settings = old
+    if not ok then error(err, 0) end
+end
+
+function T.test_highlight_defaults_are_underline_and_direct()
+    with_fake_reader_settings({}, function()
+        local plugin = fake_reader_plugin()
+        B.eq(plugin:_apply_miuread_highlight_defaults({ book_id = "1" }), true)
+        B.eq(plugin.ui.view.highlight.saved_drawer, "underscore", "default drawer is underline")
+        B.eq(plugin.ui.doc_settings:readSetting("highlight_drawer"), "underscore")
+        B.eq(plugin.ui.doc_settings:has("miuread_highlight_underline_applied"), true)
+
+        -- The wrapped prompt must save immediately and skip the native
+        -- implementation, even when the global prompt preference is set.
+        local callback_index
+        plugin.ui.highlight:showHighlightPrompt(function(index) callback_index = index end)
+        B.eq(plugin.ui.highlight.saved_index, 42, "highlight is saved directly")
+        B.eq(callback_index, 42, "caller callback receives the new index")
+        B.eq(plugin.ui.highlight.selected_text, nil, "selection is cleared after saving")
+        B.eq(plugin.ui.highlight.prompt_seen, nil, "native prompt implementation is bypassed")
+    end)
 end
 
 function T.test_highlight_defaults_respect_explicit_style_after_first_apply()
-    local plugin = fake_reader_plugin()
-    plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
-    -- Simulate the user later choosing a different KOReader highlight style.
-    plugin.ui.doc_settings:saveSetting("highlight_drawer", "invert")
-    plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
-    B.eq(plugin.ui.view.highlight.saved_drawer, "invert", "explicit style wins after first apply")
+    with_fake_reader_settings({}, function()
+        local plugin = fake_reader_plugin()
+        plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
+        -- Simulate the user later choosing a different KOReader highlight style.
+        plugin.ui.doc_settings:saveSetting("highlight_drawer", "invert")
+        plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
+        B.eq(plugin.ui.view.highlight.saved_drawer, "invert", "explicit style wins after first apply")
+    end)
+end
+
+function T.test_highlight_action_policy_is_temporary()
+    with_fake_reader_settings({
+        default_highlight_action = "ask",
+        highlight_action_on_single_word = false,
+    }, function()
+        local plugin = fake_reader_plugin()
+        plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
+        B.eq(G_reader_settings:readSetting("default_highlight_action"), "highlight")
+        B.eq(G_reader_settings:readSetting("highlight_action_on_single_word"), true)
+
+        B.eq(plugin:_restore_miuread_highlight_action_policy(), true)
+        B.eq(G_reader_settings:readSetting("default_highlight_action"), "ask")
+        B.eq(G_reader_settings:readSetting("highlight_action_on_single_word"), false)
+    end)
+end
+
+function T.test_highlight_action_policy_restores_absent_settings()
+    with_fake_reader_settings({}, function()
+        local plugin = fake_reader_plugin()
+        plugin:_apply_miuread_highlight_defaults({ book_id = "1" })
+        B.eq(plugin:_restore_miuread_highlight_action_policy(), true)
+        B.eq(G_reader_settings:readSetting("default_highlight_action"), nil)
+        B.eq(G_reader_settings:readSetting("highlight_action_on_single_word"), nil)
+    end)
 end
 
 function T.test_progress_anchor_helpers()

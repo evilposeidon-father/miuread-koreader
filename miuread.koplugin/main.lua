@@ -2682,6 +2682,7 @@ function Plugin:_schedule_post_reader_work(reason,delay,phase)
 end
 
 function Plugin:onCloseDocument()
+    self:_restore_miuread_highlight_action_policy()
     local closing_path=normalized_reader_file(self:_current_document_path())
         or normalized_reader_file(HOME_SESSION.reader_session_file)
         or normalized_reader_file(Session.home().reader_file)
