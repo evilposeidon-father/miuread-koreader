@@ -12,9 +12,9 @@ function Plugin:book_menu(b)
     b=U.merge(original,normalize(original))
     if Protocol.is_mp_account(b.bookId) then self:mp_account(b); return end
     local items={}
-    local records={{kind="clean",label="纯净版"},{kind="notes",label="划线与想法版"},
-        {kind="range_clean",label="章节版 · 纯净版"},{kind="range_notes",label="章节版 · 划线与想法版"},
-        {kind="preview_clean",label="试读版 · 纯净版"},{kind="preview_notes",label="试读版 · 划线与想法版"}}
+    local records={{kind="clean",label="纯净版"},{kind="notes",label="划线与想法版（旧版）"},
+        {kind="range_clean",label="章节版 · 纯净版"},{kind="range_notes",label="章节版 · 划线与想法版（旧版）"},
+        {kind="preview_clean",label="试读版 · 纯净版"},{kind="preview_notes",label="试读版 · 划线与想法版（旧版）"}}
     for _,entry in ipairs(records) do
         local record=self:_variant_exists(b.bookId,entry.kind)
         if record then

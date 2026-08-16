@@ -157,6 +157,38 @@ function Plugin:_reader_panel_active()
     return self:_home_enabled() and reader.enabled~=false
 end
 
+function Plugin:_apply_miuread_highlight_defaults(book)
+    -- Only for books MiuRead can identify. The default is a direct underline:
+    -- no style/color prompt after selection, and tapping an existing highlight
+    -- keeps KOReader's native edit/note/delete dialog.
+    if not (book and self.ui and self.ui.view and self.ui.highlight
+        and type(self.ui.doc_settings)=="table") then return false end
+    local view=self.ui.view
+    if type(view.highlight)~="table" then return false end
+    local settings=self.ui.doc_settings
+    local marker="miuread_highlight_underline_applied"
+    local ok_has=pcall(settings.has,settings,marker)
+    if not ok_has or not settings:has(marker) then
+        pcall(settings.saveSetting,settings,"highlight_drawer","underscore")
+        pcall(settings.saveSetting,settings,marker,true)
+    end
+    local ok_read,saved=pcall(settings.readSetting,settings,"highlight_drawer")
+    view.highlight.saved_drawer = ok_read and tostring(saved or "underscore") or "underscore"
+    if view.highlight.saved_drawer=="" then view.highlight.saved_drawer="underscore" end
+
+    local highlight=self.ui.highlight
+    if type(highlight.showHighlightPrompt)=="function" and highlight._miuread_force_direct_highlight~=true then
+        local original=highlight.showHighlightPrompt
+        highlight.showHighlightPrompt=function(this,caller_callback,prompt)
+            -- `false` means: do not open the style/color selector, save the
+            -- highlight immediately with the configured drawer.
+            return original(this,caller_callback,false)
+        end
+        highlight._miuread_force_direct_highlight=true
+    end
+    return true
+end
+
 function Plugin:_save_reader_preferences(reader,preferences)
     preferences=preferences or self.store:preferences()
     preferences.reader_ui=reader

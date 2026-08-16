@@ -84,7 +84,7 @@ function Plugin:_sync_gate_allowed(kind)
     if kind == "external_annotations" then
         -- Reader-only pull: a home-screen request stays silent and waits for
         -- the next book open instead of becoming a retry storm.
-        if self._external_annotation_sync then return false end
+        if self._external_annotation_sync or self._external_chapter_sync then return false end
         if not (self.ui and self.ui.document) then return false end
         return true
     end
@@ -117,7 +117,7 @@ function Plugin:_sync_scheduler_run_action(kind, callback)
 end
 
 function Plugin:_sync_external_annotations_quiet(callback)
-    if self._external_annotation_sync then return false, "busy" end
+    if self._external_annotation_sync or self._external_chapter_sync then return false, "busy" end
     if not (self.ui and self.ui.document) then return false, "skip" end
     if not self:is_online() then return false, "busy" end
     local ok_path, path = pcall(self._external_current_file, self)
@@ -129,15 +129,29 @@ function Plugin:_sync_external_annotations_quiet(callback)
         local ok_bind, bound = pcall(self._external_auto_bind_miuread_book, self)
         if not ok_bind or not bound then return false, "skip" end
     end
-    -- Preconditions are validated above, so the quiet entry point below should
-    -- start rather than present a manual dialog or toast.
-    local started = self:sync_external_annotations({
+    -- New downloads use the per-chapter dynamic pull. The requested chapter is
+    -- planted by _external_annotation_dynamic_hint() as the reader advances;
+    -- after it completes the next missing chapter is queued for prefetch.
+    local requested_uid = tostring(self._external_pending_chapter_uid or "")
+    local started, start_err = self:sync_external_chapter({
+        chapter_uid = requested_uid,
         silent = true,
-        on_done = function(ok, err)
+        on_done = function(ok, err, result)
+            if ok then
+                self:_external_annotation_dynamic_next(requested_uid)
+            end
             callback(ok, err)
         end,
     })
-    if not started then return false, "busy" end
+    if not started then
+        if start_err == "no_file" or start_err == "no_binding"
+            or start_err == "legacy_notes_variant" or start_err == "no_current_chapter"
+            or start_err == "not_logged_in" then
+            self._external_pending_chapter_uid = nil
+            return false, "skip"
+        end
+        return false, "busy"
+    end
     return true
 end
 

@@ -1349,7 +1349,7 @@ function Plugin:home_menu()
 end
 
 function Plugin:_confirm_current_book_rebuild(book,annotations)
-    local label=annotations and "划线与想法版" or "纯净版"
+    local label=annotations and "划线与想法版（旧版）" or "纯净版"
     UIManager:show(ConfirmBox:new{
         text="重新生成当前书籍的"..label.."？\n\n新文件会在生成完成后替换对应版本。",
         ok_text="重新生成",
@@ -1374,7 +1374,7 @@ end
 function Plugin:current_book_rebuild_menu(book)
     return {
         {text="重新生成纯净版",callback=function() self:_confirm_current_book_rebuild(book,false) end},
-        {text="重新生成划线与想法版",callback=function() self:_confirm_current_book_rebuild(book,true) end},
+        {text="重新生成划线与想法版（旧版）",callback=function() self:_confirm_current_book_rebuild(book,true) end},
     }
 end
 
@@ -1900,6 +1900,8 @@ function Plugin:onPageUpdate(page)
     -- free of optional work.
     self:_schedule_reader_toolbar_state_refresh(current,.55)
     self.sync:on_page(page)
+    -- Dynamic cloud annotations follow the reading position (throttled).
+    self:_external_annotation_page_update(page)
 end
 function Plugin:_annotation_sync_preferences()
     local p=self.store:preferences()

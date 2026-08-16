@@ -76,6 +76,24 @@ local function is_miuread_book(plugin)
     return book ~= nil
 end
 
+local function is_legacy_notes_variant(plugin)
+    local current
+    if plugin.sync and type(plugin.sync.record) == "function" then
+        current = plugin.sync:record()
+    end
+    if current and current.record then
+        if current.record.annotation_requested == true
+            or tostring(current.variant or current.record.variant or ""):find("notes", 1, true) then
+            return true
+        end
+    end
+    local path = current_file(plugin)
+    if not path or not plugin.store or type(plugin.store.identify_file) ~= "function" then return false end
+    local book, record, variant = plugin.store:identify_file(path, false)
+    return record and (record.annotation_requested == true
+        or tostring(variant or record.variant or ""):find("notes", 1, true)) or false
+end
+
 local function collect_ranges(underlines)
     local ranges, seen = {}, {}
     local source = type(underlines) == "table" and underlines.underlines or underlines or {}
@@ -245,6 +263,7 @@ end
 function M:_setup_external_annotations()
     self:_teardown_external_annotations()
     if not is_supported(self)
+        or is_legacy_notes_variant(self)
         or not self.ui.view or type(self.ui.view.registerViewModule) ~= "function" then
         return false
     end
@@ -281,6 +300,11 @@ function M:_setup_external_annotations()
 end
 
 function M:_teardown_external_annotations()
+    if self._external_dynamic_hint_task then
+        UIManager:unschedule(self._external_dynamic_hint_task)
+        self._external_dynamic_hint_task = nil
+    end
+    self._external_pending_chapter_uid = nil
     if self._external_annotation_touch_registered and self.ui then
         self.ui:unRegisterTouchZones({
             {
@@ -727,6 +751,12 @@ function M:_sync_external_annotations_start(options)
         request.entry.records = records
         request.entry.stats = stats
         request.entry.synced_at = os.time()
+        for _, chapter in ipairs(request.catalog or {}) do
+            local fetched_uid = chapter_uid(chapter)
+            if fetched_uid ~= "" and request.completed[fetched_uid] then
+                mark_chapter_fetched(request.entry, fetched_uid)
+            end
+        end
         local saved, save_err = self.external_annotations_db:saveDocument(
             request.path, request.entry)
         if not saved then error(save_err) end
@@ -1079,6 +1109,330 @@ function M:_sync_external_annotations_start(options)
     schedule_step(prepare_sync)
 end
 
+-- ---------------------------------------------------------------------------
+-- Dynamic per-chapter sync.
+--
+-- New downloads are clean editions only. Underlines and thoughts are fetched
+-- chapter by chapter as the reader advances (current chapter + next chapter)
+-- and projected through the same XPointer overlay. This path is always quiet:
+-- no progress window, no confirmation, no toast.
+-- ---------------------------------------------------------------------------
+
+local function chapter_cached(entry, uid)
+    uid = tostring(uid or "")
+    if uid == "" then return false end
+    if type(entry.fetched_chapters) == "table" and entry.fetched_chapters[uid] then
+        return true
+    end
+    for _, record in ipairs(type(entry.records) == "table" and entry.records or {}) do
+        if tostring(record.chapter_uid or "") == uid then return true end
+    end
+    return false
+end
+
+local function mark_chapter_fetched(entry, uid)
+    entry.fetched_chapters = type(entry.fetched_chapters) == "table" and entry.fetched_chapters or {}
+    entry.fetched_chapters[tostring(uid or "")] = os.time()
+end
+
+local function merge_chapter_records(entry, uid, records)
+    uid = tostring(uid or "")
+    local out = {}
+    for _, record in ipairs(type(entry.records) == "table" and entry.records or {}) do
+        if tostring(record.chapter_uid or "") ~= uid then out[#out + 1] = record end
+    end
+    for _, record in ipairs(type(records) == "table" and records or {}) do
+        out[#out + 1] = record
+    end
+    return out
+end
+
+local function dynamic_catalog(self, binding)
+    local cache = self._external_dynamic_catalog
+    if type(cache) ~= "table" or tostring(cache.book_id or "") ~= tostring(binding.book_id or "") then
+        cache = { book_id = tostring(binding.book_id or "") }
+        self._external_dynamic_catalog = cache
+        local payload = self.reader:catalog(binding.book_id)
+        local source = External.normalize_catalog(payload, binding.book_id)
+        local catalog, seen = {}, {}
+        for _, chapter in ipairs(type(source) == "table" and source or {}) do
+            local uid = chapter_uid(chapter)
+            if uid ~= "" and not seen[uid]
+                and tonumber(chapter.wordCount or 0) > 0
+                and tostring(chapter.title or "") ~= "封面" then
+                seen[uid] = true
+                catalog[#catalog + 1] = chapter
+            end
+        end
+        cache.catalog = catalog
+    end
+    return cache.catalog or {}
+end
+
+function M:sync_external_chapter(options)
+    local opts = type(options) == "table" and options or {}
+    local requested_uid = tostring(opts.chapter_uid or "")
+    local on_done = type(opts.on_done) == "function" and opts.on_done or nil
+    local path = current_file(self)
+    if not path then return false, "no_file" end
+    if is_legacy_notes_variant(self) then return false, "legacy_notes_variant" end
+    if not self:logged_in() then return false, "not_logged_in" end
+    local entry = current_entry(self)
+    if not entry or not entry.binding then
+        if not self:_external_auto_bind_miuread_book() then return false, "no_binding" end
+        entry = current_entry(self)
+    end
+    if not entry or not entry.binding then return false, "no_binding" end
+    if self._external_annotation_sync or self._external_chapter_sync then
+        return false, "already_running"
+    end
+    if requested_uid == "" then
+        local position
+        if self.sync and type(self.sync.local_position) == "function" then
+            position = self.sync:local_position()
+        end
+        requested_uid = tostring(position and position.chapter_uid or "")
+    end
+    if requested_uid == "" then return false, "no_current_chapter" end
+    if not self:is_online() then return false, "offline" end
+
+    local request = {
+        path = path,
+        entry = entry,
+        binding = entry.binding,
+        chapter_uid = requested_uid,
+        cancelled = false,
+        signal_sent = false,
+    }
+    self._external_chapter_sync = request
+
+    local function request_is_current()
+        return self._external_chapter_sync == request
+            and not request.cancelled
+            and current_file(self) == request.path
+    end
+    local function finish_request()
+        if self._external_chapter_sync == request then self._external_chapter_sync = nil end
+    end
+    local function signal(ok, err, result)
+        if request.signal_sent then return end
+        request.signal_sent = true
+        if on_done then on_done(ok, err, result) end
+    end
+    local function fail_chapter(err)
+        if not request_is_current() then
+            finish_request()
+            signal(false, "interrupted")
+            return
+        end
+        finish_request()
+        logger.warn("[MiuRead][ExternalAnnotations] chapter sync failed:",
+            "book=", tostring(request.binding.book_id or ""),
+            "chapter=", tostring(request.chapter_uid or ""),
+            tostring(err))
+        signal(false, tostring(err or "unknown"))
+    end
+    request.finish_request = finish_request
+    request.signal = signal
+    request.fail = fail_chapter
+
+    UIManager:scheduleIn(.05, function()
+        local ok, err = xpcall(function()
+            self:_sync_external_chapter_start(request)
+        end, debug.traceback)
+        if not ok then fail_chapter(err) end
+    end)
+    return true
+end
+
+function M:_sync_external_chapter_start(request)
+    local path = request.path
+    local entry = request.entry
+    local binding = request.binding
+    local uid = request.chapter_uid
+    if self._external_chapter_sync ~= request or request.cancelled
+        or current_file(self) ~= path then
+        request.finish_request()
+        request.signal(false, "interrupted")
+        return
+    end
+    local catalog = dynamic_catalog(self, binding)
+    local selected_index, selected_chapter, selected_api_uid
+    for index, chapter in ipairs(catalog) do
+        if chapter_uid(chapter) == uid then
+            selected_index, selected_chapter = index, chapter
+            selected_api_uid = chapter.chapterUid or chapter.chapterId or chapter.uid
+            break
+        end
+    end
+    if not selected_chapter then
+        error("chapter not found in catalog: " .. tostring(uid))
+    end
+
+    local call_ok, underlines = pcall(self.api.underlines, self.api,
+        binding.book_id, selected_api_uid)
+    if not call_ok or type(underlines) ~= "table" then
+        error((not call_ok and underlines) or "could not download underlines")
+    end
+
+    local ranges = collect_ranges(underlines)
+    local batches = self.api:review_batches(ranges, REVIEW_BATCH_SIZE) or {}
+    local reviews = {}
+    for _, batch in ipairs(batches) do
+        local review_ok, review_result = pcall(self.api.readreviews, self.api,
+            binding.book_id, selected_api_uid, batch)
+        if not review_ok or type(review_result) ~= "table"
+            or type(review_result.reviews) ~= "table" then
+            error((not review_ok and review_result) or "could not download thoughts")
+        end
+        for _, review in ipairs(review_result.reviews) do
+            reviews[#reviews + 1] = review
+        end
+    end
+
+    local value = {
+        book_id = tostring(binding.book_id),
+        chapter_uid = uid,
+        underlines = underlines.underlines or {},
+        reviews = reviews,
+        complete = true,
+    }
+    local saved, save_err = self.external_annotations_db:finishSyncChapter(
+        path, selected_index, uid, value)
+    if not saved then error(save_err) end
+
+    local records, stats = External.locate(self.ui.document, { value })
+    request.entry.records = merge_chapter_records(entry, uid, records)
+    mark_chapter_fetched(request.entry, uid)
+    -- Dynamic stats count persisted overlay records instead of pretending a
+    -- single-chapter locate result describes the whole book.
+    request.entry.stats = {
+        total = #request.entry.records,
+        located = #request.entry.records,
+        missing_text = tonumber(stats.missing_text) or 0,
+        unmatched = tonumber(stats.unmatched) or 0,
+        partial = tonumber(stats.partial) or 0,
+    }
+    local document_saved, document_err = self.external_annotations_db:saveDocument(
+        path, request.entry)
+    if not document_saved then error(document_err) end
+    if self._external_annotation_overlay then
+        self._external_annotation_overlay:setRecords(request.entry.records)
+    end
+    UIManager:setDirty(self.dialog, "ui")
+
+    local next_uid
+    if selected_index and catalog[selected_index + 1] then
+        next_uid = chapter_uid(catalog[selected_index + 1])
+    end
+
+    request.finish_request()
+    logger.info("[MiuRead][ExternalAnnotations] chapter synced:",
+        "book=", tostring(binding.book_id or ""), "chapter=", tostring(uid),
+        "located=", tostring(stats.located), "total=", tostring(stats.total))
+    request.signal(true, nil, { next_uid = next_uid })
+end
+
+function M:_external_annotation_next_uid(catalog, current_uid)
+    for index, chapter in ipairs(catalog or {}) do
+        if chapter_uid(chapter) == tostring(current_uid or "") and catalog[index + 1] then
+            return chapter_uid(catalog[index + 1])
+        end
+    end
+    return nil
+end
+
+function M:_external_annotation_dynamic_hint()
+    if not is_supported(self) or not (self.ui and self.ui.document) then return false end
+    -- Hidden means hidden: stop the dynamic prefetch too. Showing again
+    -- triggers one immediate hint in toggle_external_annotations().
+    if not self:_external_annotations_visible() then return false end
+    local entry = current_entry(self)
+    if not entry or not entry.binding then
+        if not self:_external_auto_bind_miuread_book() then return false end
+        entry = current_entry(self)
+    end
+    if not entry or not entry.binding then return false end
+    local position
+    if self.sync and type(self.sync.local_position) == "function" then
+        position = self.sync:local_position()
+    end
+    local current_uid = tostring(position and position.chapter_uid or "")
+    if current_uid == "" then return false end
+
+    local wanted = { current_uid }
+    local catalog = self._external_dynamic_catalog
+        and tostring(self._external_dynamic_catalog.book_id or "") == tostring(entry.binding.book_id or "")
+        and self._external_dynamic_catalog.catalog or nil
+    -- The first hint must not fetch the catalog on the reader-open path; the
+    -- chapter worker loads and caches it, then prefetches the next chapter.
+    if type(catalog) == "table" then
+        local next_uid = self:_external_annotation_next_uid(catalog, current_uid)
+        if next_uid then wanted[#wanted + 1] = next_uid end
+    end
+
+    local selected
+    for _, uid in ipairs(wanted) do
+        if not chapter_cached(entry, uid) then
+            selected = uid
+            break
+        end
+    end
+    if not selected then
+        self._external_pending_chapter_uid = nil
+        return false
+    end
+    self._external_pending_chapter_uid = selected
+    if type(self._sync_scheduler_request) == "function" then
+        self:_sync_scheduler_request("external_annotations", .4, "dynamic_chapter_" .. selected)
+    end
+    return true
+end
+
+function M:_external_annotation_dynamic_next(current_uid)
+    -- Called after a chapter sync completes; queue the following chapter when
+    -- it is still missing from the overlay records.
+    local entry = current_entry(self)
+    if not entry or not entry.binding then return false end
+    local binding = entry.binding
+    local catalog = self._external_dynamic_catalog
+        and tostring(self._external_dynamic_catalog.book_id or "") == tostring(binding.book_id or "")
+        and self._external_dynamic_catalog.catalog or nil
+    if type(catalog) ~= "table" then
+        local ok_catalog, loaded = pcall(dynamic_catalog, self, binding)
+        if ok_catalog then catalog = loaded end
+    end
+    local next_uid = self:_external_annotation_next_uid(catalog, current_uid)
+    if not next_uid or chapter_cached(entry, next_uid) then
+        self._external_pending_chapter_uid = nil
+        return false
+    end
+    self._external_pending_chapter_uid = next_uid
+    if type(self._sync_scheduler_request) == "function" then
+        self:_sync_scheduler_request("external_annotations", 1.2, "dynamic_prefetch_" .. next_uid)
+    end
+    return true
+end
+
+function M:_external_annotation_page_update(page)
+    if not (self.ui and self.ui.document) then return false end
+    if self._external_dynamic_hint_task then return true end
+    local now = os.time()
+    if now - (tonumber(self._external_dynamic_hint_last) or 0) < 4 then return true end
+    local task
+    task = function()
+        if self._external_dynamic_hint_task ~= task then return end
+        self._external_dynamic_hint_task = nil
+        self._external_dynamic_hint_last = os.time()
+        if self.ui and self.ui.document then
+            self:_external_annotation_dynamic_hint()
+        end
+    end
+    self._external_dynamic_hint_task = task
+    UIManager:scheduleIn(.70, task)
+    return true
+end
+
 function M:clear_external_annotations(touchmenu_instance)
     local path = current_file(self)
     if not path then return end
@@ -1114,6 +1468,7 @@ function M:toggle_external_annotations()
         self:toast("已隐藏本地书划线与想法", 2)
     else
         self:toast("已显示本地书划线与想法", 2)
+        self:_external_annotation_dynamic_hint()
     end
     return true
 end

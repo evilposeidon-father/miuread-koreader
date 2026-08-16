@@ -32,6 +32,7 @@ local suites = {
     "test_store_meta",
     "test_sync_center",
     "test_sync_scheduler",
+    "test_external_chapter_and_highlight",
     "test_smoke",
 }
 

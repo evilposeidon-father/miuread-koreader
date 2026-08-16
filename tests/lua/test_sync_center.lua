@@ -49,10 +49,15 @@ local function fake_plugin()
         self.calls.auto_bind = (self.calls.auto_bind or 0) + 1
         return self.auto_bind_result == true
     end
-    function plugin:sync_external_annotations(options)
+    function plugin:sync_external_chapter(options)
         self.calls.external_annotations = (self.calls.external_annotations or 0) + 1
         self._external_options = options
         if self.external_start_result == false then return false end
+        return true
+    end
+    function plugin:_external_annotation_dynamic_next(uid)
+        self.calls.external_next = (self.calls.external_next or 0) + 1
+        self.calls.external_next_uid = uid
         return true
     end
     function plugin:ensure_read_report_progress(reason, automatic)
@@ -117,12 +122,15 @@ end
 function T.test_external_action_starts_quiet_sync()
     local plugin = fake_plugin()
     plugin.external_entry = { binding = { book_id = "42" } }
+    plugin._external_pending_chapter_uid = "u7"
     local started = plugin:_sync_scheduler_run_now("external_annotations", true)
-    B.eq(started, true, "bound book starts quiet external pull")
+    B.eq(started, true, "bound book starts quiet per-chapter pull")
     B.eq(plugin.calls.external_annotations, 1)
     B.ok(plugin._external_options and plugin._external_options.silent == true, "silent option set")
+    B.eq(plugin._external_options.chapter_uid, "u7", "pending chapter passed through")
     B.ok(type(plugin._external_options.on_done) == "function", "completion callback supplied")
-    plugin._external_options.on_done(true)
+    plugin._external_options.on_done(true, nil, { next_uid = "u8" })
+    B.eq(plugin.calls.external_next, 1, "next chapter prefetch queued after success")
     B.eq(plugin:_sync_scheduler_status_label(), "已同步")
 end
 

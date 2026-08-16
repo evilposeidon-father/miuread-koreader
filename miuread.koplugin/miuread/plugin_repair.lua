@@ -35,7 +35,7 @@ function Plugin:redownload_current()
     local dialog
     local buttons={}
     buttons[#buttons+1]={{text="生成纯净版",callback=function() UIManager:close(dialog); self:choose_download_mode(b,{annotations=false},false) end}}
-    buttons[#buttons+1]={{text="生成划线与想法版",callback=function() UIManager:close(dialog); self:choose_download_mode(b,{annotations=true},false) end}}
+    buttons[#buttons+1]={{text="生成划线与想法版（旧版）",callback=function() UIManager:close(dialog); self:choose_download_mode(b,{annotations=true},false) end}}
     buttons[#buttons+1]={{text="关闭",callback=function() UIManager:close(dialog) end}}
     dialog=ButtonDialog:new{title="重新生成《"..tostring(b.title or "本书").."》",title_align="center",buttons=buttons}
     UIManager:show(dialog)

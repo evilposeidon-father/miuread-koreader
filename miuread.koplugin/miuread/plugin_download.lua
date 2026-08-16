@@ -150,20 +150,19 @@ function Plugin:choose_download_mode(b,opt,open_after)
     UIManager:show(dialog)
 end
 function Plugin:choose_download(b,limit,open_after,uid)
-    local dialog
-    local function choose_version(annotations)
-        UIManager:close(dialog)
-        self:choose_download_mode(b,{annotations=annotations,limit=limit,chapter_uid=uid},open_after)
+    -- Single-version policy: new downloads are always the clean edition.
+    -- The legacy "notes" chapter edition is only updated when it is the sole
+    -- existing file for that chapter, so old downloads stay readable.
+    local annotations=false
+    if uid then
+        local clean=self.store:chapter_variant(b.bookId,uid,"clean")
+        local notes=self.store:chapter_variant(b.bookId,uid,"notes")
+        if notes and notes.file and U.file_exists(notes.file)
+            and not (clean and clean.file and U.file_exists(clean.file)) then
+            annotations=true
+        end
     end
-    dialog=ButtonDialog:new{
-        title="下载《"..tostring(b.title or "未命名").."》",title_align="center",
-        buttons={
-            {{text="纯净版",callback=function() choose_version(false) end}},
-            {{text="划线与想法版",callback=function() choose_version(true) end}},
-            {{text="取消",callback=function() UIManager:close(dialog) end}},
-        },
-    }
-    UIManager:show(dialog)
+    self:choose_download_mode(b,{annotations=annotations,limit=limit,chapter_uid=uid},open_after)
 end
 function Plugin:_download_summary(rec,opt)
     local preview=tostring(rec and rec.access_scope or "")=="preview" and not (opt and opt.chapter_uid)
@@ -348,6 +347,12 @@ function Plugin:_finish_download_runtime(runtime,result)
     end
     self:_mark_auth_channel_ok("download")
     local rec=self:_merge_download_result(result,b,opt)
+    -- A regenerated clean edition gets a new document layout. Any overlay
+    -- records keyed to the old file must not be projected onto the new one;
+    -- the dynamic per-chapter pull rebuilds them as the reader advances.
+    if opt.annotations~=true and rec.file and self.external_annotations_db then
+        pcall(self.external_annotations_db.clearDocument,self.external_annotations_db,rec.file)
+    end
     if opt.annotations==true then
         if rec.annotation_pending==true then
             local kind=tostring(rec.annotation_error_kind or ((rec.annotation_summary or {}).error_kind) or "incomplete")
@@ -993,7 +998,7 @@ function Plugin:range_extend_menu(b)
     local clean=self:_range_variant(b.bookId,"range_clean")
     local notes=self:_range_variant(b.bookId,"range_notes")
     if clean then items[#items+1]={text="扩展章节版 · 纯净版",callback=function() self:show_range_extend_options(b,false,clean) end} end
-    if notes then items[#items+1]={text="扩展章节版 · 划线与想法版",callback=function() self:show_range_extend_options(b,true,notes) end} end
+    if notes then items[#items+1]={text="扩展章节版 · 划线与想法版（旧版）",callback=function() self:show_range_extend_options(b,true,notes) end} end
     if #items==0 then return {{text="当前没有可扩展的章节版",enabled=false}} end
     return items
 end
@@ -1062,7 +1067,7 @@ end
 function Plugin:_chapter_state_text(book_id,chapter)
     local uid=tostring(chapter.chapterUid or chapter.uid or "")
     local states={}
-    for _,entry in ipairs({{"clean","纯净版"},{"notes","划线与想法版"}}) do
+    for _,entry in ipairs({{"clean","纯净版"},{"notes","划线与想法版（旧版）"}}) do
         local record=self.store:chapter_variant(book_id,uid,entry[1])
         if record and record.file and U.file_exists(record.file) then states[#states+1]=entry[2] end
     end
@@ -1082,31 +1087,17 @@ function Plugin:_chapter_list_menu(b,rows,title,callback,start_index)
     end
     self:list(title,items,"没有可用章节")
 end
-function Plugin:_choose_range_version(b,rows,first,last,open_after)
+function Plugin:_choose_range_version(b,rows,first,last,open_after,annotations)
     first=math.max(1,tonumber(first) or 1)
     last=math.min(#rows,tonumber(last) or first)
     if last<first then first,last=last,first end
     local first_ch,last_ch=rows[first],rows[last]
-    local count=last-first+1
-    local dialog
-    local function choose(annotations)
-        UIManager:close(dialog)
-        self:choose_download_mode(b,{
-            annotations=annotations,range_start_index=first,range_end_index=last,
-            range_start_title=first_ch and first_ch.title,range_end_title=last_ch and last_ch.title,
-        },open_after==true)
-    end
-    dialog=ButtonDialog:new{
-        title="下载章节版\n"..tostring(first_ch and first_ch.title or ("第 "..first.." 章"))
-            .." 至 "..tostring(last_ch and last_ch.title or ("第 "..last.." 章"))
-            .."\n共 "..tostring(count).." 章",
-        title_align="center",buttons={
-            {{text="纯净版",callback=function() choose(false) end}},
-            {{text="划线与想法版",callback=function() choose(true) end}},
-            {{text="取消",callback=function() UIManager:close(dialog) end}},
-        },
-    }
-    UIManager:show(dialog)
+    -- New chapter downloads are clean editions only. Legacy range_notes
+    -- extension keeps its explicit flag through the extend menu.
+    self:choose_download_mode(b,{
+        annotations=annotations==true,range_start_index=first,range_end_index=last,
+        range_start_title=first_ch and first_ch.title,range_end_title=last_ch and last_ch.title,
+    },open_after==true)
 end
 function Plugin:_range_count_menu(b,rows,first)
     local start_ch=rows[first]
@@ -1148,7 +1139,7 @@ function Plugin:chapter_menu(b,ch)
     if not (clean and clean.file and U.file_exists(clean.file)) then clean=nil end
     if not (notes and notes.file and U.file_exists(notes.file)) then notes=nil end
     local items={}
-    for _,entry in ipairs({{record=clean,label="纯净版"},{record=notes,label="划线与想法版"}}) do
+    for _,entry in ipairs({{record=clean,label="纯净版"},{record=notes,label="划线与想法版（旧版）"}}) do
         local record=entry.record
         if record then
             local label=DownloadResult.variant_label(entry.label,record)
@@ -1168,7 +1159,7 @@ function Plugin:_variant_label(kind)
     local preview=kind:sub(1,8)=="preview_"
     local range=kind:sub(1,6)=="range_"
     local base=preview and kind:sub(9) or (range and kind:sub(7) or kind)
-    local label=base=="notes" and "划线与想法版" or "纯净版"
+    local label=base=="notes" and "划线与想法版（旧版）" or "纯净版"
     if preview then return "试读版 · "..label end
     if range then return "章节版 · "..label end
     return label

@@ -1163,6 +1163,18 @@ function Plugin:onReaderReady()
             book,record,variant=self.store:identify_file(path,false)
             self:_record_recent_read(path,book,record)
         end
+        if book then
+            -- Underline by default, no style confirmation, only for MiuRead books.
+            self:_apply_miuread_highlight_defaults(book)
+            -- Dynamic per-chapter pull runs on clean editions. Legacy notes
+            -- variants already carry embedded underlines and must not be
+            -- projected twice.
+            local legacy_notes = record and (record.annotation_requested == true
+                or tostring(variant or record.variant or ""):find("notes", 1, true)) or false
+            if not legacy_notes then
+                self:_external_annotation_dynamic_hint()
+            end
+        end
         if record and (record.annotation_requested==true or tostring(variant or record.variant or ""):find("notes",1,true)) then
             self:_setup_thought_tap()
             logger.info("[MiuRead][ThoughtPopup] local tap ready before cloud sync")
@@ -1207,11 +1219,7 @@ function Plugin:onReaderReady()
     self:_schedule_reader_toolbar_prewarm(ready_session,1.1)
     self:_teardown_thought_tap()
     self:_teardown_external_annotations()
-    if self:_setup_external_annotations() then
-        -- Silent cloud pull: gate/debounce/retry live in the scheduler and the
-        -- quiet entry point below never opens a dialog or progress window.
-        self:_sync_scheduler_request("external_annotations",8,"reader_ready")
-    end
+    self:_setup_external_annotations()
     self._progress_prompted_book_id=nil
     self._progress_check_running=false
     self._progress_remote_retries={}

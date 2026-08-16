@@ -134,7 +134,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginSync", "plugin_sync.lua", ["ensure_read_report_progress", "manual_sync", "show_sync_status"]),
             ("PluginSyncCenter", "plugin_sync_center.lua", ["_ensure_sync_scheduler", "_sync_scheduler_request", "_sync_scheduler_run_now", "_sync_gate_allowed"]),
             ("PluginDownload", "plugin_download.lua", ["download", "show_downloads", "show_download_cleanup_dialog"]),
-            ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu"]),
+            ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu", "_apply_miuread_highlight_defaults"]),
             ("PluginSearchMp", "plugin_search_mp.lua", ["search", "search_dialog", "open_or_download_mp_article"]),
             ("PluginRepair", "plugin_repair.lua", ["repair_current_book", "show_repair_history", "redownload_current"]),
             ("PluginPreferences", "plugin_preferences.lua", ["settings_menu", "performance_settings_menu", "local_library_settings_menu"]),
@@ -243,6 +243,20 @@ class MainLuaStructureTests(unittest.TestCase):
             used = {n for n in module_names if re.search(rf"\b{n}\b", code)}
             missing = sorted(used - declared)
             self.assertEqual([], missing, f"{name} uses modules without require: {missing}")
+
+    def test_new_downloads_use_single_clean_edition(self):
+        # New downloads no longer offer a notes/clean version choice. Legacy
+        # notes files stay readable and are only updated when they are the sole
+        # existing chapter edition.
+        download = read_text("miuread.koplugin/miuread/plugin_download.lua")
+        body = download.split("function Plugin:choose_download(", 1)[1]
+        body = body.split("function Plugin:_download_summary", 1)[0]
+        self.assertIn("Single-version policy", body)
+        self.assertIn("annotations=false", body)
+        self.assertNotIn('"划线与想法版"', body)
+        range_body = download.split("function Plugin:_choose_range_version(", 1)[1]
+        range_body = range_body.split("function Plugin:_range_count_menu", 1)[0]
+        self.assertIn("annotations=annotations==true", range_body)
 
     def test_store_readers_installed(self):
         store = read_text("miuread.koplugin/miuread/store.lua")
