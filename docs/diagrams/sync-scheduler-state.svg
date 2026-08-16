@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" width="960" height="660">
+    <style>
+      text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Microsoft JhengHei', 'SimHei', sans-serif; }
+      .title { font-size: 18px; font-weight: 600; fill: #111827; }
+      .node { font-size: 13px; font-weight: 600; fill: #111827; }
+      .sub  { font-size: 11px; fill: #6b7280; }
+      .zone { font-size: 11px; fill: #6b7280; }
+    </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/>
+    </marker>
+  </defs>
+  <rect width="960" height="660" fill="#ffffff"/>
+  <text x="40" y="38" class="title">MiuRead 静默同步状态机</text>
+  <circle cx="120" cy="200" r="8" fill="#111827"/>
+  <rect x="240" y="120" width="180" height="70" rx="8" ry="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="330.0" y="159.5" text-anchor="middle" class="node">已同步</text>
+  <rect x="500" y="120" width="180" height="70" rx="8" ry="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="590.0" y="159.5" text-anchor="middle" class="node">等待同步</text>
+  <rect x="500" y="340" width="180" height="70" rx="8" ry="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="590.0" y="379.5" text-anchor="middle" class="node">同步中</text>
+  <rect x="180" y="430" width="200" height="70" rx="8" ry="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5"/>
+  <text x="280.0" y="469.5" text-anchor="middle" class="node">N 项未完成</text>
+  <line x1="128" y1="200" x2="240" y2="165" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <line x1="420" y1="155" x2="500" y2="155" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <line x1="590" y1="190" x2="590" y2="340" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <line x1="500" y1="375" x2="420" y2="190" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="500" y1="375" x2="380" y2="430" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+  <line x1="280" y1="430" x2="500" y2="190" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+  <path d="M 680 155 C 760 155, 760 260, 680 260" fill="none" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+  <text x="770" y="210" class="zone">门控关闭 / 忙</text>
+  <line x1="500" y1="120" x2="330" y2="120" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+  <g transform="translate(40,590)">
+    <line x1="0" y1="8" x2="26" y2="8" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="32" y="12" class="zone">请求 / 调度</text>
+    <line x1="0" y1="30" x2="26" y2="30" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="32" y="34" class="zone">成功</text>
+    <line x1="0" y1="52" x2="26" y2="52" stroke="#dc2626" stroke-width="1.5"/>
+    <text x="32" y="56" class="zone">失败</text>
+    <line x1="0" y1="74" x2="26" y2="74" stroke="#ea580c" stroke-width="1.5"/>
+    <text x="32" y="78" class="zone">退避重试</text>
+    <line x1="0" y1="96" x2="26" y2="96" stroke="#6b7280" stroke-width="1.5"/>
+    <text x="32" y="100" class="zone">跳过 / 阻塞</text>
+  </g>
+  <text x="40" y="570" class="sub">四个状态覆盖：本地批注上传与云端划线动态拉取；进度与阅读时间仍由各自服务管理。</text>
+</svg>
