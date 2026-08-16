@@ -24,39 +24,9 @@ local U = require("miuread.util")
 local Screen = Device.screen
 local live_toolbar
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize() return self[1]:getSize() end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
-local TapBox = InputContainer:extend{
-    dimen = nil,
-    callback = nil,
-    hold_callback = nil,
-    enabled = true,
-}
-function TapBox:init()
-    self.dimen = self.dimen or Geom:new{w = 1, h = 1}
-    self.ges_events = {TapSelect = {GestureRange:new{ges = "tap", range = self.dimen}}}
-    if self.hold_callback then
-        self.ges_events.HoldSelect = {GestureRange:new{ges = "hold", range = self.dimen}}
-    end
-end
-function TapBox:getSize() return Geom:new{w = self.dimen.w, h = self.dimen.h} end
-function TapBox:paintTo(bb, x, y)
-    self.dimen.x, self.dimen.y = x, y
-    if self[1] then self[1]:paintTo(bb, x, y) end
-end
-function TapBox:onTapSelect()
-    if self.enabled ~= false and self.callback then self.callback() end
-    return true
-end
-function TapBox:onHoldSelect()
-    if self.enabled ~= false and self.hold_callback then self.hold_callback() end
-    return true
-end
-function TapBox:handleEvent(event) return InputContainer.handleEvent(self, event) end
+local TapBox = Ui.TapBox
 
 local function centered_text(text, width, height, face, options)
     options = options or {}
@@ -238,6 +208,31 @@ local function fit_two_lines(text, width, face, bold)
     return first .. "\n" .. fit_line(rest, width, face, bold, true)
 end
 
+local function quick_key_label_face(text, width, bold)
+    text = tostring(text or "")
+    width = math.max(1, tonumber(width) or 1)
+    local base = 10.4
+    local minimum = 8.8
+    local function face_at(size)
+        return Skin.face("cfont", size, 13.8, 8.8)
+    end
+    if text_pixel_width(text, face_at(base), bold) <= width then
+        return face_at(base)
+    end
+    local low, high, best = minimum, base, minimum
+    for _ = 1, 8 do
+        local mid = (low + high) / 2
+        local face = face_at(mid)
+        if text_pixel_width(text, face, bold) <= width then
+            best = mid
+            low = mid
+        else
+            high = mid
+        end
+    end
+    return face_at(best)
+end
+
 local function status_item(entry, width, height, callback, hold_callback, owner, ref_key)
     entry = type(entry) == "table" and entry or {}
     local enabled = entry.enabled ~= false
@@ -301,14 +296,17 @@ local function plain_action_item(entry, width, height, activate, hold_activate)
     if nudge ~= 0 then
         icon_widget = OffsetContainer:new{x_off = 0, y_off = math.floor(nudge), icon_widget}
     end
+    local label = tostring(entry.label or "")
+    local label_face = quick_key_label_face(label, width, entry.active == true)
     local content = VerticalGroup:new{
         align = "center",
         icon_widget,
-        centered_text(entry.label or "", width, label_h,
-            Skin.face("cfont", 10.4, 13.8, 8.8), {
-                bold = entry.active == true,
-                fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-            }),
+        Ui.textbox(label, width, label_h, label_face, {
+            bold = entry.active == true,
+            alignment = "center",
+            halign = "center",
+            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
+        }),
     }
     local tap = TapBox:new{
         dimen = Geom:new{w = width, h = height},

@@ -5,7 +5,7 @@ local M = {}
 local MAX_CHAPTER_BYTES = 512 * 1024
 local MAX_CHAPTER_WORDS = 100000
 local END_SCAN_WORDS = 1024
-local ANCHOR_STEPS = {12, 24, 48}
+local ANCHOR_STEPS = {12, 24, 48, 96}
 
 local ok_socket, socket = pcall(require, "socket")
 local function now_ms()

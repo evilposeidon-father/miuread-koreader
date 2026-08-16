@@ -6,6 +6,161 @@
 
 - 暂无。
 
+## 4.5.27 - 2026-08-16
+
+- 下载 取消「纯净版 / 划线与想法版」二选一：新下载一律只生成纯净版；旧划线与想法版（整本、章节版、试读版）保留可读并在菜单中标注「旧版」，仅当某章只有旧版文件时更新才沿用旧版。重新生成纯净版后会自动清理该路径下的外部批注投影缓存，避免旧位置错配。
+- 同步 阅读中动态拉取划线与想法：打开纯净版书籍后先静默拉取当前章，完成后预取下一章；翻页推进时按当前章+下一章续拉（每 4 秒节流），无划线的章节也会记录为已拉取、避免反复请求；隐藏划线与想法时暂停拉取，重新显示时立即补拉。
+- 同步 动态拉取复用既有 XPointer 覆盖层与 SQLite 断点，完全静默（无进度窗/确认框），失败由静默调度器退避重试；旧版划线与想法版不再叠加投影，避免重复显示。
+- 阅读 觅阅识别到的书籍默认划线样式改为下划线，并跳过选词后的样式确认直接划线；首次应用记录 per-book 标记，之后用户手动改过的样式不再被覆盖。点击已有划线仍走 KOReader 原生二次操作（笔记/样式/删除等）。
+- 修复 位置冲突默认值 `progress_conflict_mode` 此前误写入 annotation_sync 默认块，现迁回 sync 默认块。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 112 个用例：新增动态章选择/预取与高亮默认值测试；Python 结构守卫新增「新下载只生成纯净版」回归检查；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
+## 4.5.26 - 2026-08-16
+
+- 同步 新增 `miuread.sync_scheduler` 深模块：静默同步的防抖合并、门控（登录/在线/挂起/任务忙）、线性退避重试与状态标签（已同步/等待同步/同步中/N 项未完成）；支持 skip（不适用）与 busy（稍后重试且不计失败）两种动作结果，支持 `cancel_all` 与运行中再次请求的续排定时器；新增 10 个纯逻辑单测。
+- 同步 新增 `miuread.plugin_sync_center` 控制器：把调度器接上 UIManager 定时器、`logged_in`/`is_online`/忙碌门控与既有同步入口；本地批注改动后自动上传（快照成功后延迟约 12 秒）、打开书籍后自动静默拉取云端划线（延迟约 8 秒，失败自动退避重试）。
+- 同步 `external_annotation_sync` 增加静默模式：自动拉取不弹进度窗口/确认框，完成或中断通过回调汇报给调度器；阅读退出后取消未执行的云端拉取请求，避免回到主页后持续空转。
+- 同步 一键同步快捷键：主页头部「同步」点击 = 后台静默同步全部，长按 = 同步诊断；主页快捷面板同步块与阅读快捷按键「静默同步」接入同一入口；新增 KOReader 动作 `MiuReadSyncAll`（觅阅：静默同步全部）；主页同步状态文字在非已同步时显示 ● 圆点。
+- 同步 阅读进度冲突自动策略：默认「自动采用云端」（静默跳转并确认，不弹窗），可在同步设置/诊断中切换为「询问我」；云端来源不一致（网页 vs 官方）仍保留人工选择；决策下沉 `progress_decision.conflict_policy` 并新增单测。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件与控制器加载）增至 106 个用例（sync_center 7 个、scheduler 10 个、conflict_policy 等），Python 结构守卫纳入 `plugin_sync_center` 与 `Scheduler` 依赖声明；既有拆分控制器（plugin_home_content、plugin_navigation、store_defaults、progress_position 等）回归继续全绿。
+
+## 4.5.25 - 2026-08-16
+
+- 修复 真机 crash.log 定位：plugin_home_content 缺 `unpack_args` 局部导致打开主页崩溃；同源扫描又发现 plugin_navigation 缺 ButtonDialog/unpack_args、plugin_ui_menus 缺 HOME_SESSION/unpack_args，全部补齐；结构守卫扩展为覆盖普通局部变量引用。
+
+- 架构 store.lua 分层第一批：抽出 `miuread/store_defaults`（持久化默认值单一来源）与 `miuread/store_downloads`（下载状态/队列 reader，8 个方法），Store 保留门面并在加载时合并；新增 5 个纯逻辑单测与结构守卫。
+- 架构 store.lua 分层第二批：新增 `miuread/store_auth`（登录态/登录会话/健康度，8 方法）与 `miuread/store_sessions`（会话读写/失效/清空，6 方法 + 2 个共享失效 helper），Store 门面合并；新增 6 个纯逻辑单测；store.lua 约 2111 → 1998 行。
+- 架构 store.lua 分层第三批：新增 `miuread/store_library`（书籍/变体/路径/遗忘/删除/全量列表，约 25 方法）与 `miuread/store_pending`（待安装/清理结果/阅读上报记录，约 9 方法），Store 门面合并；新增 6 个纯逻辑单测；store.lua 约 1998 → 1783 行。
+- 架构 store.lua 分层第四批：新增 `miuread/store_identity`（EPUB 身份识别/文件匹配/重建目录，6 方法 + 全部识别 helper），并修复 library 组迁移后 `basename` 引用缺失的真机级隐患（新增回归单测）；store.lua 约 1783 → 1438 行。
+- 架构 store.lua 分层第五批：新增 `miuread/store_meta`（最近阅读/书架缓存/封面/更新状态，约 11 方法），Store 门面合并；新增 3 个纯逻辑单测；store.lua 约 1438 → 1379 行。
+- 架构 sync.lua 开始分层：进度比较判定 `compare` 下沉至 `progress_decision`（未知/相同/云领先/本地领先），sync 改为薄委托并新增单测。
+- 架构 sync.lua 继续分层：新增 `miuread.progress_position` 深模块（章节字段归一、可读章节统计、按章节定位、精确映射→本地回退两段式 resolve），`Sync:position` 薄委托；新增 5 个纯逻辑单测；sync.lua 约 3491 → 3423 行。
+- 架构 sync.lua 继续分层：新增 `miuread.report_daemon` 深模块（阅读时间后台服务路径/状态戳/legacy 退役清单/文件清理），`Sync:_daemon_paths` / `_retire_legacy_daemon` / `_cleanup_daemon_files` 薄委托；新增 4 个纯逻辑单测。
+- 架构 新增 `miuread.download_coordinator` 深模块：接管下载状态读写/节流、active 状态合并、状态文案、payload 形状、队列去重与下一任务启动判定；`plugin_download` 改为薄委托，新增 8 个纯逻辑单元测试（可注入时钟与假 store）。
+- 架构 启动加载基线 + Lazy 化：新增 `tests/lua/bench_startup.lua` 无头基准（stub KOReader 后多次加载 main 并输出每模块首次加载耗时）；按数据把 `epub`、`local_annotation_database`、`local_library`、`reader_toolbar`、`home_view`、`action_sheet`、`home_quick_panel`、`book_integrity`、`epub_installer`、`download_database` 等低频模块改为 Lazy 代理，无头基线 285ms → 254ms（约 -11%），启动模块数 154 → 147。
+- 架构 新增 `miuread.progress_decision` 深模块：下沉进度同步纯决策（章节/偏移/百分比匹配、上传失败分类、本机-云端对齐判定）；`plugin_sync` 改为薄委托，新增 4 组纯逻辑单元测试。
+- 架构 新增 `miuread.session_state`：统一接管 5 个 `_G.__MIUREAD_*` 会话表的创建/字段归一与访问器，main.lua 与拆分控制器不再直接 `rawget(_G, ...)`；新增 session_state 单元测试。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_search_mp`、`miuread.plugin_repair`、`miuread.plugin_preferences`、`miuread.plugin_thought_popup`、`miuread.plugin_device`、`miuread.plugin_book`（书籍菜单/详情）、`miuread.plugin_events`（KOReader 事件入口），均沿用 `install(Plugin)` 模式；`main.lua` 从约 14430 行降至约 11700 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_exit`（退出/重启/觅阅菜单），并把 main 内 6 个 HOME_* 快照局部变量全部替换为 `session_state` 活读（persist/sync_home_session 删除）；`main.lua` 约 11700 → 11589 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_navigation`（阅读打开/关闭/重建/返回状态机，约 38 方法；主页渲染方法留在 main）；`normalized_reader_file` / `mark_reader_origin` 上收至 session_state；`main.lua` 约 11589 → 10553 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_native_menu`（原生 KOReader 菜单守护，6 方法）；`onReaderReady` / `onSetDimensions` 并入 plugin_navigation；`main.lua` 约 10553 → 10087 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_shelf`（书架加载/行构建/封面缓存/公众号书架，约 35 方法），SHELF_CACHE_TTL 常量迁入；`main.lua` 约 10087 → 9279 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_home`（主页模式/后台调度/封面派生/时间显示，约 70 方法）；主页布局常量与匹配 helper 上收至 `miuread.home_layout_constants`（main/preferences/device 全部改为共享引用，删除镜像）；`main.lua` 约 9279 → 7305 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_home_customize`（主页自定义菜单，约 35 方法）与 `miuread.plugin_ui_menus`（提醒设置/下载策略/菜单框架/阅读器原生页，约 45 方法）；`main.lua` 约 7305 → 6175 行。
+- 架构 继续拆分 `main.lua`：新增 `miuread.plugin_home_content`（主页内容/本地书库/元数据/本地浏览器/动作弹窗，约 160 方法）；HOME_*_LABELS 上收 home_layout_constants；`main.lua` 约 6175 → 2726 行（自 14430 行累计 -81%）。
+- 测试 新增 Lua 5.1 无头测试套件 `tests/lua/run.lua`：纯逻辑单测（digests/codec/util/timezone/ui_scale/lazy）与插件 smoke 加载测试（stub KOReader 后加载 main.lua、全部控制器与懒加载 UI 模块）；`scripts/bootstrap_lua51.py` 可本地编译 Lua 5.1，CI 在语法检查后直接运行该套件。
+- 测试 Python 结构回归测试通过 `tests/test_lua_suite.py` 统一执行 Lua 套件（本地与 CI 均跑）。
+
+## 4.5.24 - 2026-08-16
+
+- 架构 继续拆分 `main.lua` 控制器：新增 `miuread.plugin_update`（更新与关于）、`miuread.plugin_sync`（进度/时间同步）、`miuread.plugin_download`（下载与存储清理）、`miuread.plugin_reader`（阅读快捷面板与阅读控制），统一沿用 `install(Plugin)` 模式；`main.lua` 从约 20697 行降至约 14430 行。
+- 修复 补齐拆分控制器缺失的局部 require（下载：Http/lfs/TransientGuard/ActionSheet；阅读：HomeView/HomeQuickPanel/ActionSheet/ScreenshotMode），修复真机打开书籍时因 nil 全局调用直接崩溃闪退的问题。
+- 测试 结构回归测试新增四个拆分控制器的安装与关键方法归属检查、控制器依赖声明守卫，懒加载模块检查改为跨控制器汇总。
+
+## 4.5.23 - 2026-08-15
+
+- 同步 息屏/休眠时自动保存当前阅读位置的进度锚点；唤醒并恢复 Wi-Fi 后自动同步到微信读书云端。
+- 同步 本地批注同步与阅读进度上传均已集成“觅阅进度锚点”书签，不需要额外操作。
+
+## 4.5.22 - 2026-08-15
+
+- 同步 阅读进度上传并确认后，自动在微信读书云端生成/更新一条“觅阅进度锚点”书签；手机端打开书签即可跳到本机正在读的那段文字，避免排版分页差异。
+
+## 4.5.21 - 2026-08-15
+
+- 同步 手动上传阅读进度后，明确显示上传的章节、章节内位置与定位方式，并提示手机端微信读书排版与 KOReader 不同、同一进度可能落在相邻页。
+
+## 4.5.20 - 2026-08-15
+
+- 架构 明确 legacy 网络层去留：保留 `miuread.legacy` 仅用于阅读时长上报，新增 README 说明边界；除 `legacy_adapter_worker` 外禁止其他模块直接依赖，并新增回归测试防止越界。
+
+## 4.5.19 - 2026-08-15
+
+- 测试 新增 `tests/test_project_invariants.py` 结构回归测试（版本一致性、UI 组件唯一来源、控制器安装、弹窗骨架、懒加载模块与安装包结构），共 11 项。
+- CI 新增 `.github/workflows/ci.yml`：push/PR 时执行 Lua 5.1 语法检查与 Python 结构测试。
+
+## 4.5.18 - 2026-08-15
+
+- 架构 新增 `miuread.plugin_maintenance` 控制器，把诊断包、缓存体检、备份恢复与阅读周报从 `main.lua` 抽出并安装到 Plugin；`main.lua` 减少约 150 行。
+
+## 4.5.17 - 2026-08-15
+
+- 阅读 新增“阅读周报”：在工具与维护中查看本周/今日阅读时长与阅读页数，数据来自 KOReader 本地阅读统计。
+
+## 4.5.16 - 2026-08-15
+
+- 同步 阅读位置冲突弹窗增加时间与来源对比：本机标为“当前阅读”，云端位置显示来源与相对更新时间，帮助用户一眼判断该用哪边。
+
+## 4.5.15 - 2026-08-15
+
+- 备份 新增“备份与恢复”：一键备份配置、登录态、下载断点与每本书的本地批注/想法数据库；可从最近备份恢复并自动重启。
+
+## 4.5.14 - 2026-08-15
+
+- 体验 下载、更新、本地批注同步的错误提示统一为“发生了什么 + 建议怎么办”，并补充限流、禁止访问与网络错误的人话识别。
+
+## 4.5.13 - 2026-08-15
+
+- 维护 新增“缓存体检与一键清理”：扫描已下载书籍、下载断点、受保护数据、封面缓存与临时文件大小，并支持一键清理全部可清理项。
+
+## 4.5.12 - 2026-08-15
+
+- 诊断 新增“生成诊断包”：一键导出插件版本、运行模式、设备信息、脱敏偏好与最近下载诊断，存放在觅阅数据目录的 temp/miuread-diagnostic-* 下。
+
+## 4.5.11 - 2026-08-15
+
+- 架构 拆分 `home_view.lua`：主页卡片/徽章/动作栏/分类页签等 20 个构建函数迁至新模块 `miuread.home_cards`，`home_view.lua` 从 1712 行降至 1125 行，保留主页生命周期与交互逻辑。
+
+## 4.5.10 - 2026-08-15
+
+- 架构 阅读列表弹窗与排版弹窗接入 `Ui.TapBox` 子类，保留“长按松手触发 + 点击防抖”的交互；至此除 `ui_components` 自身外，全部页面的 `TapBox` 已统一。
+
+## 4.5.9 - 2026-08-15
+
+- 架构 `TapBox` 与 `tappable` 收口到 `miuread.ui_components` 的 `Ui.TapBox` / `Ui.tappable`；主页、整架浏览、本地浏览、主页下滑工具栏、气泡菜单、阅读工具栏及 5 个阅读弹窗不再各自定义点击容器。
+- 架构 `Ui.TapBox` 支持可选长按、长按延迟触发、点击防抖，兼容当前各页面的交互差异；剩余两个复杂长按页面（阅读列表、排版弹窗）留待下一轮迁移。
+
+## 4.5.8 - 2026-08-15
+
+- 架构 `fixed_frame` 收口到 `miuread.ui_components` 的 `Ui.frame`，主页、整架浏览、本地浏览、主页下滑工具栏与气泡菜单不再各自定义边框容器。
+
+## 4.5.7 - 2026-08-15
+
+- 架构 阅读设置弹窗、阅读列表弹窗、前光/色温弹窗、阅读控制中心、排版弹窗全部接入 `reader_panel_base` 公共骨架；7 个阅读弹窗生命周期现在完全一致。
+- 架构 `reader_panel_base` 支持按 `panel_dimen`/`frame_dimen` 自适应取弹窗区域，兼容控制中心等全屏面板。
+
+## 4.5.6 - 2026-08-15
+
+- 架构 新增 `miuread/reader_panel_base.lua` 阅读弹窗公共骨架，统一关闭、点击外部关闭、下滑关闭、键盘返回与残影刷新逻辑。
+- 架构 目录弹窗与阅读进度弹窗率先接入公共骨架，各自减少约 50 行重复生命周期代码；视觉与交互保持不变。
+
+## 4.5.5 - 2026-08-15
+
+- 界面 阅读菜单栏快捷按键标签自动适配：长标签在窄格内自动缩小字号，避免“云端划线”“本地上传”等四字标签被截断。
+
+## 4.5.4 - 2026-08-15
+
+- 菜单 主页菜单栏与主页下滑工具栏隐藏项目后即时提示恢复路径，与阅读快捷按键的恢复提示保持一致。
+
+## 4.5.3 - 2026-08-15
+
+- 菜单 首次打开阅读菜单栏时提示“长按快捷按键可排序、隐藏、替换或恢复”，提升长按管理的可发现性。
+- 菜单 主页菜单栏与阅读快捷按键的设置页新增静态使用提示；隐藏阅读快捷按键后即时提示恢复路径。
+
+## 4.5.2 - 2026-08-15
+
+- 菜单 新增“菜单与快捷按键”聚合入口，统一管理主页菜单栏、主页下滑工具栏、阅读菜单栏与阅读界面设置，减少用户到处找入口。
+- 菜单 原“主页快捷工具”更名为“主页菜单栏”，与“主页下滑工具栏”区分更清楚。
+
+## 4.5.1 - 2026-08-15
+
+- 性能 主页与阅读器中的重量级界面模块（设置、目录、阅读控制中心、整架浏览、截图与评论弹窗等）改为首次使用时才加载，减少插件启动阶段的模块装载与内存占用。
+- 诊断 新增 `main.lua` 加载耗时日志，便于在设备日志中观察启动阶段的性能波动。
+- 架构 新增 `miuread/lazy.lua` 惰性加载器；未打开过的弹窗在退出清理时不再被强制加载。
+- 页面 统一页面基础组件：`OffsetContainer` 与 `face` 收口到 `miuread.ui_components`，主页、整架、本地浏览、阅读设置/目录/进度/前光/控制中心/工具栏/排版等页面不再各自重复定义。
+- 菜单 阅读下滑菜单栏的快捷按键改为可配置：在“阅读界面 → 快捷按键”中可增删最多 8 个常用功能，默认保持原有 8 个入口，避免功能入口硬编码导致用户到处找。
+- 菜单 阅读快捷按键支持长按管理：长按任意快捷按键可左移、右移、隐藏、替换或恢复隐藏功能，原有长按动作保留在管理弹窗中。
+
 ## 4.5.0 - 2026-08-14
 
 - 界面 新安装默认使用插件模式并保留已有用户选择；主页与阅读下滑栏扩展为自适应快捷布局，支持条件 Bluetooth、长 Wi-Fi 名称和“退出 KO”。

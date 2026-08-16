@@ -11,6 +11,8 @@ local ReadReportWorker = require("miuread.legacy_adapter_worker")
 local BookIntegrity = require("miuread.book_integrity")
 local PrecisePosition = require("miuread.precise_position")
 local SourcePosition = require("miuread.source_position")
+local ProgressDecision = require("miuread.progress_decision")
+local ReportDaemon = require("miuread.report_daemon")
 local U = require("miuread.util")
 
 local Sync = {}
@@ -256,70 +258,13 @@ local function context_from(state, fallback)
     }
 end
 
-local function map_position(chapters, ratio, fallback)
-    chapters = type(chapters) == "table" and chapters or {}
-    ratio = U.clamp(tonumber(ratio) or 0, 0, 1)
-    fallback = fallback or {}
-    if #chapters == 0 then
-        return {
-            progress = U.clamp(ratio * 100, 0, 100),
-            chapter_uid = fallback.chapter_uid or 0,
-            chapter_index = tonumber(fallback.chapter_index or 0) or 0,
-            offset = tonumber(fallback.offset or 0) or 0,
-            summary = fallback.summary or "",
-        }
-    end
-    local total = 0
-    for _, ch in ipairs(chapters) do total = total + math.max(1, tonumber(ch.word_count or 0) or 0) end
-    local target, acc = ratio * total, 0
-    for index, ch in ipairs(chapters) do
-        local words = math.max(1, tonumber(ch.word_count or 0) or 0)
-        if target <= acc + words or index == #chapters then
-            return {
-                progress = U.clamp(ratio * 100, 0, 100),
-                chapter_uid = ch.uid or 0,
-                chapter_index = tonumber(ch.index) or index,
-                offset = math.max(0, math.floor(target - acc)),
-                summary = ch.title or fallback.summary or "",
-            }
-        end
-        acc = acc + words
-    end
-end
-
-local function chapter_uid(chapter)
-    return chapter and (chapter.chapterUid or chapter.uid or chapter.chapter_uid)
-end
-
-local function chapter_index(chapter, fallback)
-    return tonumber(chapter and (chapter.chapterIdx or chapter.index or chapter.chapter_index or chapter.chapter_idx))
-        or tonumber(fallback or 0) or 0
-end
-
-local function chapter_words(chapter)
-    return math.max(1, tonumber(chapter and (chapter.wordCount or chapter.word_count) or 0) or 0)
-end
-
-local function readable_local_chapter_count(chapters)
-    local count = 0
-    for _, chapter in ipairs(type(chapters) == "table" and chapters or {}) do
-        if type(chapter) == "table" and chapter.structural ~= true
-            and tostring(chapter_uid(chapter) or "") ~= "" then
-            count = count + 1
-        end
-    end
-    return count
-end
-
-local function local_chapter_by_uid(chapters, wanted_uid)
-    wanted_uid = tostring(wanted_uid or "")
-    if wanted_uid == "" then return nil end
-    for index, chapter in ipairs(type(chapters) == "table" and chapters or {}) do
-        if type(chapter) == "table" and tostring(chapter_uid(chapter) or "") == wanted_uid then
-            return chapter, index
-        end
-    end
-end
+local ProgressPosition = require("miuread.progress_position")
+local map_position = ProgressPosition.map_position
+local chapter_uid = ProgressPosition.chapter_uid
+local chapter_index = ProgressPosition.chapter_index
+local chapter_words = ProgressPosition.chapter_words
+local readable_local_chapter_count = ProgressPosition.readable_local_chapter_count
+local local_chapter_by_uid = ProgressPosition.local_chapter_by_uid
 
 local function catalog_progress_from_remote(remote, chapters)
     if type(remote)~="table" then return remote end
@@ -553,19 +498,10 @@ function Sync:position(record, ratio, chapters, full_catalog)
     if type(full_map) ~= "table" or #full_map == 0 then
         full_map = select(1, self:_progress_catalog(record))
     end
-    local mapped,map_error=BookIntegrity.position_from_maps(local_map,full_map,ratio,{
+    return ProgressPosition.resolve(local_map, full_map, ratio, {
         chapter_uid = record.record and record.record.chapter_uid or 0,
         summary = record.book.title,
     })
-    if mapped then return mapped end
-    local fallback=map_position(local_map,ratio,{
-        chapter_uid=record.record and record.record.chapter_uid or 0,
-        summary=record.book.title,
-    })
-    fallback.safe=BookIntegrity.maps_equivalent(local_map,full_map)
-    fallback.mapping_error=map_error
-    fallback.source=fallback.safe and "equivalent_local_map" or "unsafe_local_ratio"
-    return fallback
 end
 
 function Sync:_decorate_legacy_context(context, record)
@@ -1836,6 +1772,14 @@ function Sync:upload(elapsed, callback, options)
     self:_decorate_legacy_context(legacy_book, record)
     local position_snapshot=type(options.position_override)=="table" and U.copy(options.position_override)
         or self:_position_for_report(ratio,options.precise_position==true or options.progress_only==true)
+    if type(position_snapshot)=="table" then
+        self.store:save_session(book_id,{
+            last_position_basis=tostring(position_snapshot.offset_basis
+                or position_snapshot.position_basis
+                or position_snapshot.source or "unknown"),
+            last_position_fallback=tostring(position_snapshot.precision_fallback or ""),
+        })
+    end
     self:_save_local_snapshot(book_id,position_snapshot)
     if type(position_snapshot)~="table" or position_snapshot.safe~=true or position_snapshot.progress==nil
         or tostring(position_snapshot.chapter_uid or "")=="" then
@@ -2125,11 +2069,8 @@ function Sync:test_upload(callback)
 end
 
 function Sync:compare(local_percent, remote)
-    if not remote then return "unknown" end
-    local delta = (tonumber(remote.percent) or 0) - (tonumber(local_percent) or 0)
     local threshold = tonumber(self.store:preferences().sync.threshold) or 2
-    if math.abs(delta) <= threshold then return "same" end
-    return delta > 0 and "remote_ahead" or "local_ahead"
+    return ProgressDecision.compare(local_percent, remote, threshold)
 end
 
 function Sync:jump(percent)
@@ -2148,15 +2089,7 @@ function Sync:jump(percent)
     end)
 end
 
-local function daemon_stamp(status)
-    if type(status) ~= "table" then return nil end
-    return table.concat({
-        tostring(status.generation or 0),
-        tostring(status.seq or 0),
-        tostring(status.state or ""),
-        tostring(status.completed_at or status.attempted_at or status.written_at or 0),
-    }, ":")
-end
+local daemon_stamp = ReportDaemon.stamp
 
 local process_ffi
 local function process_helpers()
@@ -2212,35 +2145,26 @@ function Sync:_retire_legacy_daemon()
     -- Stop workers created by earlier service layouts before starting v10.
     -- Their job files contained authentication snapshots, so overwrite those
     -- snapshots immediately and remove the remaining files after the worker exits.
-    local base = self.store.temp_dir .. "/readtime-service"
-    local retired={}
-    for _, suffix in ipairs({"", "-v1", "-v2", "-v3", "-v4", "-v5", "-v6", "-v7", "-v8", "-v9"}) do
-        local prefix=base..suffix
-        local owner_path=prefix..".owner.json"
-        retired[#retired+1]={
-            job=prefix..".job.json",control=prefix..".control.json",status=prefix..".status.json",
-            context=prefix..".context.json",stop=prefix..".stop",owner=owner_path,lock=prefix..".lock",
-        }
-        local generation=2147483000
-        U.atomic_write(prefix..".job.json",Json.encode({
+    local retired = ReportDaemon.retired_specs(self.store.temp_dir)
+    for _, paths in ipairs(retired) do
+        local generation = 2147483000
+        U.atomic_write(paths.job, Json.encode({
             generation=generation,controller_token="retired",book_id="",book={},auth={},interval=Config.READ_INTERVAL,
         }),true)
-        U.atomic_write(prefix..".control.json",Json.encode({
+        U.atomic_write(paths.control, Json.encode({
             active=false,generation=generation,controller_token="retired",updated_at=os.time(),
         }),true)
-        U.atomic_write(prefix..".stop", "1", true)
+        U.atomic_write(paths.stop, "1", true)
         -- Status/context may contain old cookies or report tokens. They are not
         -- needed once the worker has been retired, so remove them immediately.
-        os.remove(prefix..".status.json")
-        os.remove(prefix..".context.json")
+        os.remove(paths.status)
+        os.remove(paths.context)
     end
     local function purge()
         for _,paths in ipairs(retired) do
             local owner=read_json_file(paths.owner)
             if not owner or not process_alive(owner.pid) then
-                os.remove(paths.job); os.remove(paths.control); os.remove(paths.status)
-                os.remove(paths.context); os.remove(paths.stop); os.remove(paths.owner)
-                remove_lock_dir(paths.lock)
+                ReportDaemon.delete_paths(paths)
             end
         end
     end
@@ -2250,19 +2174,7 @@ function Sync:_retire_legacy_daemon()
 end
 
 function Sync:_daemon_paths()
-    -- One versioned service per KOReader process. The version suffix prevents
-    -- an OTA reload from reusing a worker created by older plugin code.
-    local base = self.store.temp_dir .. "/readtime-service-v"
-        .. tostring(READ_REPORT_SERVICE_VERSION)
-    return {
-        job = base .. ".job.json",
-        control = base .. ".control.json",
-        status = base .. ".status.json",
-        context = base .. ".context.json",
-        stop = base .. ".stop",
-        owner = base .. ".owner.json",
-        lock = base .. ".lock",
-    }
+    return ReportDaemon.paths(self.store.temp_dir, READ_REPORT_SERVICE_VERSION)
 end
 
 function Sync:_cleanup_daemon_files(daemon)
@@ -2270,13 +2182,7 @@ function Sync:_cleanup_daemon_files(daemon)
     local paths = daemon.paths
     local owner = read_json_file(paths.owner)
     if not owner or not process_alive(owner.pid) then
-        os.remove(paths.job)
-        os.remove(paths.control)
-        os.remove(paths.status)
-        os.remove(paths.context)
-        os.remove(paths.stop)
-        os.remove(paths.owner)
-        remove_lock_dir(paths.lock)
+        ReportDaemon.delete_paths(paths)
     end
 end
 
@@ -3458,6 +3364,8 @@ function Sync:status()
         last_http_code=self.last_http_code or (session and session.last_http_code),
         last_http_length=self.last_http_length or (session and session.last_http_length),
         last_payload_public=session and session.last_payload_public,
+        last_position_basis=session and session.last_position_basis,
+        last_position_fallback=session and session.last_position_fallback,
         next_due=self.next_due,consecutive_failures=self.consecutive_failures or (session and session.consecutive_failures) or 0,
         tick_count=self.tick_count,
         progress_enabled=self.store:preferences().sync.progress_enabled~=false,

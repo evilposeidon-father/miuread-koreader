@@ -42,14 +42,24 @@ function M.reader(plugin)
             {text="插件设置",sub_item_table_func=function() return PluginSettings.menu(plugin) end},
         }
     end
-    return {
+    local rows={
         {text="当前书籍",sub_item_table_func=function() return plugin:current_book_menu() end},
-        {text="打开觅阅书架",callback=plugin:safe("shelf",function() plugin:show_shelf(false,false,"account") end)},
-        {text=plugin:_sync_menu_text(),sub_item_table_func=function() return PluginSettings.sync(plugin) end},
-        {text=plugin:_download_menu_text(),callback=function() plugin:show_downloads() end},
-        {text="评论与想法",sub_item_table_func=function() return comment_and_thought_menu(plugin) end},
-        {text="插件设置",sub_item_table_func=function() return PluginSettings.menu(plugin) end},
     }
+    do
+        local external_annotations_available=plugin:_external_annotations_menu_available()
+        rows[#rows+1]={
+            text="本地书划线与想法",
+            post_text=external_annotations_available and nil or "仅支持本地重排书籍",
+            enabled_func=function() return external_annotations_available end,
+            sub_item_table_func=function() return plugin:external_annotations_menu_items() end,
+        }
+    end
+    rows[#rows+1]={text="打开觅阅书架",callback=plugin:safe("shelf",function() plugin:show_shelf(false,false,"account") end)}
+    rows[#rows+1]={text=plugin:_sync_menu_text(),sub_item_table_func=function() return PluginSettings.sync(plugin) end}
+    rows[#rows+1]={text=plugin:_download_menu_text(),callback=function() plugin:show_downloads() end}
+    rows[#rows+1]={text="评论与想法",sub_item_table_func=function() return comment_and_thought_menu(plugin) end}
+    rows[#rows+1]={text="插件设置",sub_item_table_func=function() return PluginSettings.menu(plugin) end}
+    return rows
 end
 
 return M

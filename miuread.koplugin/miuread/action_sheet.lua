@@ -36,30 +36,9 @@ local function clamp(value, minimum, maximum)
     return value
 end
 
-local OffsetContainer = WidgetContainer:extend{x_off = 0, y_off = 0}
-function OffsetContainer:getSize() return self[1]:getSize() end
-function OffsetContainer:paintTo(bb, x, y)
-    self[1]:paintTo(bb, x + self.x_off, y + self.y_off)
-end
+local OffsetContainer = Ui.OffsetContainer
 
-local function fixed_frame(width, height, options, content)
-    options = options or {}
-    local border = tonumber(options.bordersize) or 0
-    local padding = tonumber(options.padding) or 0
-    local inset = border + padding
-    return FrameContainer:new{
-        bordersize = border,
-        padding = padding,
-        margin = 0,
-        radius = options.radius or 0,
-        background = options.background or Blitbuffer.COLOR_WHITE,
-        color = options.color or Blitbuffer.COLOR_BLACK,
-        CenterContainer:new{
-            dimen = Geom:new{w = math.max(1, width - inset * 2), h = math.max(1, height - inset * 2)},
-            content or Widget:new{dimen = Geom:new{w = 1, h = 1}},
-        },
-    }
-end
+local fixed_frame = Ui.frame
 
 -- Clean chat-bubble pointer. It uses the same black outline and white fill as
 -- the panel and overlaps the panel border slightly so the tail reads as one
@@ -85,26 +64,9 @@ function BubblePointer:paintTo(bb, x, y)
     end
 end
 
-local TapBox = InputContainer:extend{dimen = nil, callback = nil}
-function TapBox:init()
-    self.dimen = self.dimen or Geom:new{w = 1, h = 1}
-    self.ges_events = {TapSelect = {GestureRange:new{ges = "tap", range = self.dimen}}}
-end
-function TapBox:getSize() return Geom:new{w = self.dimen.w, h = self.dimen.h} end
-function TapBox:paintTo(bb, x, y)
-    self.dimen.x, self.dimen.y = x, y
-    if self[1] then self[1]:paintTo(bb, x, y) end
-end
-function TapBox:onTapSelect()
-    if self.callback then self.callback(self.dimen and self.dimen:copy() or nil) end
-    return true
-end
+local TapBox = Ui.TapBox
 
-local function tappable(width, height, child, callback)
-    local tap = TapBox:new{dimen = Geom:new{w = width, h = height}, callback = callback}
-    tap[1] = CenterContainer:new{dimen = Geom:new{w = width, h = height}, child}
-    return tap
-end
+local tappable = Ui.tappable
 
 local SheetWidget = InputContainer:extend{
     name = "miuread_action_sheet",
