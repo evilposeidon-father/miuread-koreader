@@ -305,6 +305,7 @@ function M:_teardown_external_annotations()
         self._external_dynamic_hint_task = nil
     end
     self._external_pending_chapter_uid = nil
+    self._external_dynamic_skip_until = nil
     if self._external_annotation_touch_registered and self.ui then
         self.ui:unRegisterTouchZones({
             {
@@ -1349,7 +1350,15 @@ function M:_external_annotation_dynamic_hint()
     if not self:_external_annotations_visible() then return false end
     local entry = current_entry(self)
     if not entry or not entry.binding then
-        if not self:_external_auto_bind_miuread_book() then return false end
+        local now = os.time()
+        if now < (tonumber(self._external_dynamic_skip_until) or 0) then return false end
+        if not self:_external_auto_bind_miuread_book() then
+            -- Arbitrary local books have no WeRead binding. Remember the miss
+            -- so page turns do not re-identify the file every few seconds.
+            self._external_dynamic_skip_until = now + 120
+            return false
+        end
+        self._external_dynamic_skip_until = nil
         entry = current_entry(self)
     end
     if not entry or not entry.binding then return false end
