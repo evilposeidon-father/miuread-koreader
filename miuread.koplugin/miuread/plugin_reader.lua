@@ -71,7 +71,6 @@ function Plugin:_reader_preferences()
     if reader.show_title~=false then reader.show_title=false; changed=true end
     if reader.show_status~=false then reader.show_status=false; changed=true end
     if reader.show_recent~=false then reader.show_recent=false; changed=true end
-    if reader.panel_mode~="native" and reader.panel_mode~="miuread" then reader.panel_mode="native"; changed=true end
     if type(reader.recent_actions)~="table" or #reader.recent_actions>0 then reader.recent_actions={}; changed=true end
     if reader.edge_guard_enabled==nil then reader.edge_guard_enabled=true; changed=true end
     local edge_percent=tonumber(reader.edge_guard_percent)
@@ -151,11 +150,6 @@ function Plugin:_reader_preferences()
     preferences.reader_ui=reader
     if changed then self.store:save_preferences(preferences) end
     return reader,preferences
-end
-
-function Plugin:_reader_use_native_panels()
-    local reader = self:_reader_preferences()
-    return tostring(reader.panel_mode or "native") ~= "miuread"
 end
 
 function Plugin:_reader_panel_active()
@@ -772,9 +766,6 @@ function Plugin:_reader_next_chapter()
 end
 
 function Plugin:_show_reader_progress_control(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     if not (self.ui and self.ui.document) then return false end
     self:_mark_reader_busy(8)
     ReaderProgressDialog.show{
@@ -877,9 +868,6 @@ function Plugin:_reader_toc_items()
 end
 
 function Plugin:_show_reader_toc(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     local items=self:_reader_toc_items()
     if #items>0 then
         self:_mark_reader_busy(6)
@@ -966,9 +954,6 @@ function Plugin:_reader_adjust_font_weight(delta)
 end
 
 function Plugin:_show_reader_font_face_menu(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     local font=self.ui and self.ui.font or nil
     if not font then self:info("当前文档暂时无法选择字体"); return false end
     if type(font.setupFaceMenuTable)=="function" then pcall(font.setupFaceMenuTable,font) end
@@ -980,9 +965,6 @@ function Plugin:_show_reader_font_face_menu(back_callback)
     return false
 end
 function Plugin:_show_reader_spacing_panel(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     ReaderSettingsDialog.show{
         title="行距",
         subtitle=function() return "当前行距："..tostring(math.floor(self:_reader_line_spacing_value()+.5)).."%" end,
@@ -1979,9 +1961,6 @@ function Plugin:_show_reader_records(initial_kind,back_callback)
 end
 
 function Plugin:_reader_show_bookmarks(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     return self:_show_reader_records("bookmark",back_callback)
 end
 
@@ -2140,9 +2119,6 @@ function Plugin:_reader_restore_typography_defaults()
 end
 
 function Plugin:_show_reader_font_panel(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     local return_to_font=function() self:_show_reader_font_panel(back_callback) end
     ReaderTypographyDialog.show{
         title="字体与排版",
@@ -2631,9 +2607,6 @@ function Plugin:_reader_cycle_refresh_rate()
 end
 
 function Plugin:_show_reader_page_display_panel(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     ReaderSettingsDialog.show{
         title="页面显示",
         subtitle="阅读中的常用显示项目",
@@ -2797,9 +2770,6 @@ function Plugin:_reader_adjust_vertical_margin(delta)
 end
 
 function Plugin:_show_reader_margin_panel(back_callback)
-    if self:_reader_use_native_panels() then
-        return self:_show_koreader_reader_menu(back_callback)
-    end
     local return_here=function() self:_show_reader_margin_panel(back_callback) end
     ReaderSettingsDialog.show{
         title="页边距",
