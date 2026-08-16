@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- 修复 真机 crash.log 定位：plugin_home_content 缺 `unpack_args` 局部导致打开主页崩溃；同源扫描又发现 plugin_navigation 缺 ButtonDialog/unpack_args、plugin_ui_menus 缺 HOME_SESSION/unpack_args，全部补齐；结构守卫扩展为覆盖普通局部变量引用。
+
 - 架构 store.lua 分层第一批：抽出 `miuread/store_defaults`（持久化默认值单一来源）与 `miuread/store_downloads`（下载状态/队列 reader，8 个方法），Store 保留门面并在加载时合并；新增 5 个纯逻辑单测与结构守卫。
 - 架构 store.lua 分层第二批：新增 `miuread/store_auth`（登录态/登录会话/健康度，8 方法）与 `miuread/store_sessions`（会话读写/失效/清空，6 方法 + 2 个共享失效 helper），Store 门面合并；新增 6 个纯逻辑单测；store.lua 约 2111 → 1998 行。
 - 架构 store.lua 分层第三批：新增 `miuread/store_library`（书籍/变体/路径/遗忘/删除/全量列表，约 25 方法）与 `miuread/store_pending`（待安装/清理结果/阅读上报记录，约 9 方法），Store 门面合并；新增 6 个纯逻辑单测；store.lua 约 1998 → 1783 行。

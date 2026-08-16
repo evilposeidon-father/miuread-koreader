@@ -163,6 +163,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "EpubInstaller", "Event", "ExternalAnnotationsDB",
             "ExternalAnnotationSync", "FullShelfView", "GestureBridge",
             "HomeData", "HomeQuickPanel", "HomeView", "Http", "InputDialog",
+            "HOME_SESSION", "unpack_args",
             "Json", "Lazy", "Library", "LocalAnnotationDatabase",
             "LocalBrowserView", "LocalLibrary", "LocalMetadata", "MemoryMode",
             "Menu", "MigrationProgress", "MP", "NetworkMetadata", "Orientation",
@@ -227,7 +228,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "plugin_home_content.lua",
         ]:
             text = read_text(f"miuread.koplugin/miuread/{name}")
-            declared = set(re.findall(r'^local\s+(\w+)\s*=\s*(?:require|Lazy|gesture_aware_class)\(', text, re.M))
+            declared = set(re.findall(r'^local\s+(\w+)\s*=', text, re.M))
             code = code_only(text)
             used = {n for n in module_names if re.search(rf"\b{n}\b", code)}
             missing = sorted(used - declared)

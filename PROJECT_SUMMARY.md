@@ -1,20 +1,20 @@
 # miuread-koreader 项目摘要
 
-> MiuRead 是 KOReader 的非官方微信读书客户端，支持同步划线与想法、本地书匹配及 OTA 升级。
+> KOReader的微信读书客户端插件，支持同步阅读进度、划线与想法
 
 ## 统计
 
-- 代码文件：161
-- 代码行数：约 67195
-- 主要语言：.lua 156、.py 4、.json 1
-- 项目大小：2977.6 KB
-- 最后更新：2026-08-16 03:35
-- 摘要生成时间：2026-08-16 03:37
+- 代码文件：163
+- 代码行数：约 67261
+- 主要语言：.lua 158、.py 4、.json 1
+- 项目大小：2979.2 KB
+- 最后更新：2026-08-16 03:38
+- 摘要生成时间：2026-08-16 03:41
 
 ## 文件清单（前 60）
 
 - `miuread.koplugin\miuread\plugin_home_content.lua`（3523 行）
-- `miuread.koplugin\miuread\sync.lua`（3424 行）
+- `miuread.koplugin\miuread\sync.lua`（3390 行）
 - `miuread.koplugin\miuread\plugin_reader.lua`（3203 行）
 - `miuread.koplugin\main.lua`（2727 行）
 - `miuread.koplugin\miuread\plugin_home.lua`（2032 行）

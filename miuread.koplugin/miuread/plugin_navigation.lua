@@ -12,6 +12,20 @@ local HomeData = require("miuread.home_data")
 local Lazy = require("miuread.lazy")
 local ReaderToolbar = Lazy("miuread.reader_toolbar")
 local ReaderTransitionGuard = require("miuread.reader_transition_guard")
+local GestureBridge = require("miuread.gesture_bridge")
+local RawButtonDialog = require("ui/widget/buttondialog")
+
+local function gesture_aware_class(base, attributes)
+    local class = base:extend(attributes or {})
+    function class:handleEvent(event)
+        return GestureBridge.handle(base, self, event)
+    end
+    return class
+end
+
+local ButtonDialog = gesture_aware_class(RawButtonDialog, {_miuread_transient=true, _miuread_modal_surface=true})
+
+local unpack_args = unpack or table.unpack
 
 local HOME_SESSION = Session.home()
 local NAVIGATION = Session.navigation()

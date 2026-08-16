@@ -47,6 +47,8 @@ local InputDialog = gesture_aware_class(RawInputDialog, {_miuread_transient=true
 
 local _ = Text.tr
 
+local unpack_args = unpack or table.unpack
+
 local ok_socket, socket = pcall(require, "socket")
 local function monotonic_wall_time()
     if ok_socket and socket and type(socket.gettime) == "function" then return socket.gettime() end
