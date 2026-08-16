@@ -74,4 +74,20 @@ function T.test_compare_classification()
     B.eq(PD.compare(50, { percent = 53 }, 5), "same", "larger threshold")
 end
 
+function T.test_conflict_policy()
+    local should_adopt, percent = PD.conflict_policy("auto_cloud", "remote_ahead", { percent = 80 })
+    B.eq(should_adopt, true, "auto_cloud adopts remote_ahead")
+    B.eq(percent, 80)
+    should_adopt = PD.conflict_policy("auto_cloud", "local_ahead", { percent = 40 })
+    B.eq(should_adopt, true, "auto_cloud adopts even when local is ahead")
+    should_adopt = PD.conflict_policy("ask", "remote_ahead", { percent = 80 })
+    B.eq(should_adopt, false, "ask keeps the prompt")
+    should_adopt = PD.conflict_policy("auto_cloud", "same", { percent = 80 })
+    B.eq(should_adopt, false, "aligned positions never need policy")
+    should_adopt = PD.conflict_policy("auto_cloud", "remote_ahead", nil)
+    B.eq(should_adopt, false, "missing remote never auto-adopts")
+    should_adopt = PD.conflict_policy("bogus", "remote_ahead", { percent = 80 })
+    B.eq(should_adopt, false, "unknown mode falls back to ask")
+end
+
 return T

@@ -186,6 +186,10 @@ function Plugin:_sync_scheduler_force_all()
 end
 
 function Plugin:_sync_shortcut()
+    if not self:logged_in() then
+        self:info("请先登录微信读书账号。")
+        return false
+    end
     local started = self:_sync_scheduler_force_all()
     if started then
         self:status_toast("觅阅同步", "已开始后台同步", 2)

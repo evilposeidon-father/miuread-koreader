@@ -39,6 +39,10 @@ function Plugin:onShowMiuReadSyncStatus()
     self:show_sync_status(false)
     return true
 end
+function Plugin:onMiuReadSyncAll()
+    self:_sync_shortcut()
+    return true
+end
 function Plugin:onMiuReadQRLogin()
     if self:logged_in() then self:show_account_status() else self.auth_flow:start() end
     return true

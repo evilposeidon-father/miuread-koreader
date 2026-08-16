@@ -460,7 +460,7 @@ function Plugin:show_home_quick_panel(more_expanded)
         koreader_settings={icon="⚙",icon_key="ko-reader",label="KO设置",detail="",callback=function() self:_show_native_koreader_menu() end},
         return_koreader={icon="←",icon_key="return",label="返回KO",detail="",callback=function() self:_home_close_to_native(true) end},
         quit={icon="⏻",icon_key="power",label="退出 KO",detail="",callback=function() self:_quit_koreader() end},
-        sync={icon="⇅",icon_key="sync",label="同步",detail=sync_label,callback=function() self:_sync_home_pending() end,hold_callback=function(anchor) self:_show_home_sync_popup(anchor) end},
+        sync={icon="⇅",icon_key="sync",label="同步",detail=sync_label,callback=function() self:_sync_shortcut() end,hold_callback=function() self:_sync_shortcut_diagnostics() end},
         miuread_settings={icon="⚙",icon_key="settings",label="觅阅设置",detail="",callback=function() self:_show_home_settings_center() end},
         downloads={icon="⇩",icon_key="download",label="下载",detail=download_detail,
             callback=function(anchor) self:_show_home_download_popup(anchor) end,

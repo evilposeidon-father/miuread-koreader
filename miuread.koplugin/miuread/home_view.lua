@@ -272,7 +272,7 @@ function HomeWidget:_build_header(children, m)
                 HorizontalSpan:new{width=UiScale.dp(2,1,3)},
                 sync_value_cell,
             },
-        }, self.opts.on_quick_panel),
+        }, self.opts.on_sync or self.opts.on_quick_panel, self.opts.on_sync_hold),
         HorizontalSpan:new{width = gap},
         time_cell,
         HorizontalSpan:new{width = gap},

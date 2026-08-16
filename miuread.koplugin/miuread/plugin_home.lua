@@ -760,7 +760,7 @@ function Plugin:_home_refresh_header_now(force_device,force_sync)
     return HomeView.update_header{
         account_name=self:_home_account_name(),
         wifi_text=self:_home_wifi_text(),
-        sync_text=self:_home_sync_status_label(force_sync==true),
+        sync_text=self:_home_sync_status_text(force_sync==true),
         time_text=self:_display_time("%H:%M"),
         battery_text=self:_home_battery_text(),
     }

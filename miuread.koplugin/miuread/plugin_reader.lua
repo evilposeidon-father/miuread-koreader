@@ -172,11 +172,16 @@ function Plugin:_reader_quick_actions(definitions, reader)
             local action_key=key
             local entry={}
             for field,value in pairs(definition) do entry[field]=value end
-            -- Long-press always opens the shortcut manager. Any previous
-            -- long-press behaviour (for example comment toggle) is preserved
-            -- as a row inside that manager instead of being lost.
-            entry.hold_callback=function(anchor)
-                self:_show_reader_quick_action_manage_popup(action_key,anchor)
+            -- Long-press usually opens the shortcut manager. The silent sync
+            -- shortcut is the one exception: long-press opens diagnostics.
+            if action_key == "sync" then
+                entry.hold_callback = function()
+                    self:_sync_shortcut_diagnostics()
+                end
+            else
+                entry.hold_callback=function(anchor)
+                    self:_show_reader_quick_action_manage_popup(action_key,anchor)
+                end
             end
             actions[#actions+1]=entry
             if #actions>=READER_QUICK_ACTION_MAX then break end
@@ -2109,6 +2114,7 @@ function Plugin:_show_reader_sync_panel(back_callback)
                     {label="同步状态",value=self:progress_sync_label(),value_bold=true,arrow=false},
                 }},
                 {title="立即操作",rows={
+                    {icon="sync",label="静默同步全部",value=self:_sync_scheduler_status_label(),callback=function() self:_sync_shortcut() end},
                     {icon="upload",label="上传当前进度",value="执行",callback=function() self:upload_local_progress(true) end},
                     {icon="download",label="读取云端进度",value="执行",callback=function() self:manual_sync() end},
                 }},
@@ -2986,7 +2992,7 @@ function Plugin:_reader_quick_definitions()
         edge_guard={key="edge_guard",icon=edge_enabled and "edge-guard" or "edge-guard-off",label="防误触",icon_scale=1.02,active=edge_enabled,callback=function()
             self:_show_reader_edge_guard_panel(function() self:show_reader_quick_panel() end)
         end},
-        sync={key="sync",icon="sync",label="同步",callback=function() self:_show_reader_sync_panel(function() self:show_reader_quick_panel() end) end},
+        sync={key="sync",icon="sync",label="静默同步",callback=function() self:_sync_shortcut() end},
     }
 end
 

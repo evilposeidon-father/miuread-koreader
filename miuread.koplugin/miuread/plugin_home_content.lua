@@ -3390,7 +3390,7 @@ function Plugin:_show_miuread_home_now(force_scan,from_refresh,quiet,refresh_kin
     local view,err=HomeView.show({
         title="觅阅",
         wifi_text=self:_home_wifi_text(),
-        sync_text=self:_home_sync_status_label(),
+        sync_text=self:_home_sync_status_text(),
         time_text=self:_display_time("%H:%M"),
         battery_text=self:_home_battery_text(),
         account_name=self:_home_account_name(),
@@ -3409,6 +3409,8 @@ function Plugin:_show_miuread_home_now(force_scan,from_refresh,quiet,refresh_kin
         lockscreen_enabled=home.lockscreen_recent~=false,
         screensaver_file=screensaver_file,
         on_quick_panel=function() self:show_home_quick_panel() end,
+        on_sync=function() self:_sync_shortcut() end,
+        on_sync_hold=function() self:_sync_shortcut_diagnostics() end,
         on_interaction=function(first,kind) self:_home_note_interaction(first,kind) end,
         on_account=function() self:_home_leave_and_run("account status",function() self:show_account_status() end) end,
         on_menu=function() self:show_home_menu() end,

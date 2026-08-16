@@ -10,6 +10,7 @@ local general_actions={
     {"miuread_toggle_time_sync","ToggleMiuReadTimeSync","觅阅：开关自动同步时间"},
     {"miuread_downloads","ShowMiuReadDownloads","觅阅：下载管理"},
     {"miuread_sync_status","ShowMiuReadSyncStatus","觅阅：同步状态"},
+    {"miuread_sync_all","MiuReadSyncAll","觅阅：静默同步全部"},
     {"miuread_qr_login","MiuReadQRLogin","觅阅：扫码登录"},
     {"miuread_logout","MiuReadLogout","觅阅：退出登录"},
 }

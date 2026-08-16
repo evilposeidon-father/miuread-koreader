@@ -87,4 +87,15 @@ function ProgressDecision.resolve_alignment(local_position, remote, cmp, thresho
     return "different", coordinate_match, remotep, matched_percent, source, meta
 end
 
+-- Applies the automatic progress-conflict policy. The default "auto_cloud"
+-- mode silently adopts the cloud position whenever a conflict can be
+-- resolved without asking; "ask" keeps the interactive prompt.
+-- Returns should_adopt, remote_percent.
+function ProgressDecision.conflict_policy(mode, cmp, remote)
+    if mode ~= "auto_cloud" or cmp == "same" then return false end
+    local remotep = tonumber(remote and remote.percent)
+    if remotep == nil then return false end
+    return true, remotep
+end
+
 return ProgressDecision

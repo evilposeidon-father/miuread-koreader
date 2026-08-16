@@ -82,6 +82,7 @@ function Plugin:sync_diagnostics_menu()
                 end
             end)
         end},
+        {text="位置冲突处理",post_text=self:_progress_conflict_mode_label(),sub_item_table_func=function() return self:_progress_conflict_mode_menu() end},
         {text="查看详细错误",callback=function() self:show_sync_status(true) end},
         {text="重置当前书籍同步状态",callback=function()
             local r=self.sync:record()
@@ -196,12 +197,27 @@ function Plugin:_home_sync_summary(force)
 end
 
 function Plugin:_home_sync_status_label(force)
+    -- The silent scheduler owns the fastest-moving state (waiting/running/
+    -- failed retries). Read it before the more expensive home summary walk.
+    local scheduler_label="已同步"
+    if type(self._sync_scheduler_status_label)=="function" then
+        scheduler_label=self:_sync_scheduler_status_label() or "已同步"
+    end
+    if scheduler_label=="同步中" then return "同步中" end
     local summary=self:_home_sync_summary(force)
+    if scheduler_label:find("项未完成",1,true) then return scheduler_label end
     if summary.failed>0 then return "失败 "..tostring(summary.failed) end
+    if scheduler_label=="等待同步" then return "等待同步" end
     if summary.total>0 then return "待同步 "..tostring(summary.total) end
     if self.annotation_async and self.annotation_async:busy() then return "同步中" end
     if summary.checking==true then return "同步检查中" end
     return "已同步"
+end
+
+function Plugin:_home_sync_status_text(force)
+    local label=self:_home_sync_status_label(force)
+    if label~="已同步" and not label:find("●",1,true) then return "● "..label end
+    return label
 end
 
 function Plugin:_sync_all_pending_annotations(on_done)
@@ -338,10 +354,30 @@ function Plugin:_sync_home_pending()
     return false
 end
 
+function Plugin:_progress_conflict_mode_label()
+    local mode=tostring(self.store:preferences().sync.progress_conflict_mode or "auto_cloud")
+    return mode=="ask" and "询问我" or "自动采用云端"
+end
+function Plugin:_set_progress_conflict_mode(mode)
+    if mode~="auto_cloud" and mode~="ask" then return false end
+    local p=self.store:preferences(); p.sync=p.sync or {}
+    p.sync.progress_conflict_mode=mode
+    self:_save_ui_preferences(p,"progress_conflict_mode")
+    self:status_toast("位置冲突",self:_progress_conflict_mode_label(),3)
+    return true
+end
+function Plugin:_progress_conflict_mode_menu()
+    return {
+        {text="自动采用云端",post_text="静默跳转到云端位置，不再弹窗",checked_func=function() return self.store:preferences().sync.progress_conflict_mode~="ask" end,keep_menu_open=true,callback=function() self:_set_progress_conflict_mode("auto_cloud") end},
+        {text="询问我",post_text="本机与云端位置不同时弹出选择",checked_func=function() return self.store:preferences().sync.progress_conflict_mode=="ask" end,keep_menu_open=true,callback=function() self:_set_progress_conflict_mode("ask") end},
+    }
+end
+
 function Plugin:sync_settings_menu()
     return {
         {text="阅读进度",post_text=self.store:preferences().sync.progress_enabled~=false and "已开启" or "已关闭",checked_func=function() return self.store:preferences().sync.progress_enabled~=false end,keep_menu_open=true,callback=function() self:toggle_progress_sync() end},
         {text="阅读时间",post_text=self.store:preferences().sync.time_enabled==true and "已开启" or "已关闭",checked_func=function() return self.store:preferences().sync.time_enabled==true end,keep_menu_open=true,callback=function() self:toggle_time_sync() end},
+        {text="位置冲突处理",post_text=self:_progress_conflict_mode_label(),sub_item_table_func=function() return self:_progress_conflict_mode_menu() end},
         {text="本地划线与想法",post_text="手动同步待处理内容",enabled=false},
         {text="新想法云端可见范围",post_text=self:annotation_sync_visibility_label(),sub_item_table_func=function() return self:annotation_sync_visibility_menu() end},
         {text="同步成功提醒",checked_func=function() return self:_sync_success_notice_enabled() end,keep_menu_open=true,callback=function() self:toggle_sync_success_notice() end},
@@ -531,8 +567,9 @@ function Plugin:ensure_read_report_progress(reason,automatic)
             end
             local remotep=math.floor((tonumber(remote.percent) or 0)+.5)
             local threshold=tonumber(self.store:preferences().sync.threshold) or 2
+            local cmp=self.sync:compare(localp,remote)
             local action,coordinate_match=ProgressDecision.resolve_alignment(
-                local_position,remote,self.sync:compare(localp,remote),threshold)
+                local_position,remote,cmp,threshold)
             if action=="aligned" then
                 self.sync:mark_verified(id,"positions_aligned",localp,remotep,local_position)
                 self:_save_progress_state(id,"aligned",coordinate_match and "章节位置一致" or "本机与云端位置接近",localp,remotep)
@@ -541,6 +578,19 @@ function Plugin:ensure_read_report_progress(reason,automatic)
                     local detail=coordinate_match and "章节和章节内位置一致，无需处理。" or "位置接近，无需处理。"
                     self:info("本机位置："..localp.."%\n云端位置："..remotep.."%\n\n"..detail)
                 end
+                return
+            end
+            -- Default conflict policy is silent: adopt the cloud position.
+            -- Users who prefer the old prompt can switch to "ask" in sync
+            -- settings. Cloud-source conflicts (web vs agent) still ask because
+            -- there is no meaningful automatic preference between the two.
+            local conflict_mode=tostring(self.store:preferences().sync.progress_conflict_mode or "auto_cloud")
+            local should_adopt,adopt_pct=ProgressDecision.conflict_policy(conflict_mode,cmp,remote)
+            if should_adopt then
+                logger.info("[MiuRead][Progress] auto conflict policy",
+                    "book=",id,"mode=",conflict_mode,"cmp=",tostring(cmp),
+                    "local=",tostring(localp),"remote=",tostring(adopt_pct))
+                self:_use_remote_position(id,localp,remote,true)
                 return
             end
             self:_save_progress_state(id,"different","检测到本机与云端位置不同",localp,remotep)
@@ -719,13 +769,15 @@ function Plugin:upload_local_progress(manual,callback)
     return true
 end
 
-function Plugin:_use_remote_position(id,localp,remote)
+function Plugin:_use_remote_position(id,localp,remote,silent)
     local remotep=math.floor((tonumber(remote and remote.percent) or 0)+.5)
     local jumped,jump_error=self.sync:jump_remote(remote)
     if not jumped then
         self:_save_progress_state(id,"remote_jump_unconfirmed","无法跳转到云端位置",localp,remotep)
         self.sync:end_progress_sync("云端位置跳转失败，阅读时间暂缓上传")
-        self:info(tostring(jump_error or "无法跳转到云端位置。").."\n\n当前位置未确认，因此暂不上传阅读时间。")
+        if silent~=true then
+            self:info(tostring(jump_error or "无法跳转到云端位置。").."\n\n当前位置未确认，因此暂不上传阅读时间。")
+        end
         return false
     end
     UIManager:scheduleIn(1.2,function()
@@ -736,11 +788,13 @@ function Plugin:_use_remote_position(id,localp,remote)
             self.sync:mark_verified(id,"remote_position_selected",actual,remotep,actual_position)
             self:_save_progress_state(id,"remote_selected","已采用云端位置",actual,remotep)
             self.sync:end_progress_sync("已采用云端位置，阅读时间开始同步")
-            self:status_toast("阅读进度同步","已切换到云端进度："..remotep.."%",4)
+            if silent~=true then self:status_toast("阅读进度同步","已切换到云端进度："..remotep.."%",4) end
         else
             self:_save_progress_state(id,"remote_jump_unconfirmed","已请求跳转，位置仍待确认",actual,remotep)
             self.sync:end_progress_sync("云端位置仍待确认，阅读时间暂缓上传")
-            self:info("已请求跳到云端位置，但当前显示位置为 "..actual.."%。\n\n为避免覆盖云端位置，暂不上传阅读时间。")
+            if silent~=true then
+                self:info("已请求跳到云端位置，但当前显示位置为 "..actual.."%。\n\n为避免覆盖云端位置，暂不上传阅读时间。")
+            end
         end
     end)
     return true
