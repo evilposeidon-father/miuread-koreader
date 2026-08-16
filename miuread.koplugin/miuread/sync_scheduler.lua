@@ -105,6 +105,9 @@ function Scheduler:record_result(kind, ok, err)
         state.failures = 0
         state.last_ok_at = self.clock()
         state.last_error = nil
+        -- A request may have arrived while the action was running. Keep its
+        -- due-at and make sure a timer exists for the follow-up dispatch.
+        self:_ensure_timer()
     else
         state.failures = state.failures + 1
         state.last_error = tostring(err or "unknown")

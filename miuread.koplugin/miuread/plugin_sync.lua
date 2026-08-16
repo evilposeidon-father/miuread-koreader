@@ -378,7 +378,7 @@ function Plugin:sync_settings_menu()
         {text="阅读进度",post_text=self.store:preferences().sync.progress_enabled~=false and "已开启" or "已关闭",checked_func=function() return self.store:preferences().sync.progress_enabled~=false end,keep_menu_open=true,callback=function() self:toggle_progress_sync() end},
         {text="阅读时间",post_text=self.store:preferences().sync.time_enabled==true and "已开启" or "已关闭",checked_func=function() return self.store:preferences().sync.time_enabled==true end,keep_menu_open=true,callback=function() self:toggle_time_sync() end},
         {text="位置冲突处理",post_text=self:_progress_conflict_mode_label(),sub_item_table_func=function() return self:_progress_conflict_mode_menu() end},
-        {text="本地划线与想法",post_text="手动同步待处理内容",enabled=false},
+        {text="本地划线与想法",post_text="改动后自动上传",enabled=false},
         {text="新想法云端可见范围",post_text=self:annotation_sync_visibility_label(),sub_item_table_func=function() return self:annotation_sync_visibility_menu() end},
         {text="同步成功提醒",checked_func=function() return self:_sync_success_notice_enabled() end,keep_menu_open=true,callback=function() self:toggle_sync_success_notice() end},
         {text="同步诊断",sub_item_table_func=function() return self:sync_diagnostics_menu() end},

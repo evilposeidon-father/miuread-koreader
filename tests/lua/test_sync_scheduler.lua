@@ -175,4 +175,22 @@ function T.test_cancel_all_clears_pending_work()
     B.eq(s:status_label(), "已同步")
 end
 
+function T.test_request_during_run_keeps_follow_up_timer()
+    local host = fake_host(1000)
+    host.default_delay = 0
+    local s = Scheduler.new(host)
+    s:request("local_annotations", 0, "first")
+    s:tick()
+    B.eq(#host.runs, 1)
+    -- A new edit arrives while the first action is still running.
+    s:request("local_annotations", 10, "second")
+    host.runs[1].callback(true)
+    B.eq(s:status_label(), "等待同步", "follow-up request still visible")
+    host.now = 1015
+    s:tick()
+    B.eq(#host.runs, 2, "follow-up request dispatches after success")
+    host.runs[2].callback(true)
+    B.eq(s:status_label(), "已同步")
+end
+
 return T
