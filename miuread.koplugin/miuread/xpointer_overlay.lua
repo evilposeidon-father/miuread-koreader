@@ -26,6 +26,7 @@ function Overlay:new(opts)
         records = opts.records or {},
         enabled = opts.enabled ~= false,
         cache = {},
+        pos_cache = {},
         visible = {},
         generation = 1,
         clock = opts.clock or os.clock,
@@ -41,6 +42,7 @@ end
 
 function Overlay:setRecords(records)
     self.records = type(records) == "table" and records or {}
+    self.pos_cache = {}
     self:invalidate()
 end
 
@@ -56,6 +58,7 @@ function Overlay:invalidate()
 end
 
 function Overlay:resetLayout()
+    self.pos_cache = {}
     self:invalidate()
 end
 
@@ -91,15 +94,29 @@ function Overlay:_computeVisible()
     local visible = {}
     local candidates = 0
 
-    for _, record in ipairs(self.records) do
+    for index, record in ipairs(self.records) do
         if type(record) == "table" and record.pos0 and record.pos1 then
-            local ok_start, start_pos = pcall(
-                document.getPosFromXPointer, document, record.pos0
-            )
-            local ok_end, end_pos = pcall(
-                document.getPosFromXPointer, document, record.pos1
-            )
-            if ok_start and ok_end and tonumber(start_pos) and tonumber(end_pos)
+            local cached = self.pos_cache[index]
+            local start_pos, end_pos
+            if cached and cached.pos0 == record.pos0 and cached.pos1 == record.pos1
+                and cached.s ~= nil and cached.e ~= nil then
+                start_pos, end_pos = cached.s, cached.e
+            else
+                local ok_start, s = pcall(
+                    document.getPosFromXPointer, document, record.pos0
+                )
+                local ok_end, e = pcall(
+                    document.getPosFromXPointer, document, record.pos1
+                )
+                start_pos, end_pos = tonumber(s), tonumber(e)
+                if ok_start and ok_end and start_pos ~= nil and end_pos ~= nil then
+                    self.pos_cache[index] = {
+                        pos0 = record.pos0, pos1 = record.pos1,
+                        s = start_pos, e = end_pos,
+                    }
+                end
+            end
+            if start_pos ~= nil and end_pos ~= nil
                 and start_pos <= bottom and end_pos >= top then
                 candidates = candidates + 1
                 local ok_boxes, boxes = pcall(

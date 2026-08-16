@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.46 - 2026-08-17
+
+- 性能 翻页路径审计 + 划线覆盖层位置缓存：翻页只做「标记失效 + 防抖写盘 + 节流后的延迟预取」，无同步重活；xpointer_overlay 新增 per-record 文档位置缓存，XPointer→文档位置只在记录变更/重排时算一次，翻页时不再逐条重复查询，减少翻页时的 CREngine 调用。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 163 个用例：新增 xpointer_overlay 位置缓存 3 个单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.45 - 2026-08-17
 
 - 性能 启动加载优化：把下载/划线/内容抓取等低频模块（downloader/content_reader/annotations/annotation_sync/download_* /external_annotation_sync 等）改为用到再加载（Lazy），启动无头基准 341ms → 217ms、加载模块 174 → 157，恢复并超过重构前基线，翻页路径不受影响。

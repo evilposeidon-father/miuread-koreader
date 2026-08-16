@@ -23,6 +23,7 @@ local suites = {
     "test_annotation_text",
     "test_chapter_title",
     "test_external_annotation_parse",
+    "test_xpointer_overlay",
     "test_download_coordinator",
     "test_util",
     "test_codec",
