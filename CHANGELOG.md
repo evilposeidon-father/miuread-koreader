@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.47 - 2026-08-17
+
+- 性能 内存/GC 审计 + 划线覆盖层跨页缓存：确认 recent_reads（≤10）/想法弹窗缓存（≤8）/封面索引/书柜缓存均有界或自动剪枝、封面位图渲染后即释放；xpointer_overlay 的逐页框缓存改为只在重排/记录变更时清空，翻页前后往返同一页不再重复计算 CREngine 屏幕框。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 165 个用例：新增覆盖层跨页缓存与重排清空 2 个单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.46 - 2026-08-17
 
 - 性能 翻页路径审计 + 划线覆盖层位置缓存：翻页只做「标记失效 + 防抖写盘 + 节流后的延迟预取」，无同步重活；xpointer_overlay 新增 per-record 文档位置缓存，XPointer→文档位置只在记录变更/重排时算一次，翻页时不再逐条重复查询，减少翻页时的 CREngine 调用。

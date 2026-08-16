@@ -253,7 +253,9 @@ function M:onUpdatePos()
 end
 
 function M:onDocumentRerendered()
-    self:_invalidate_external_annotations_layout()
+    if self._external_annotation_overlay then
+        self._external_annotation_overlay:resetLayout()
+    end
 end
 
 function M:_external_edge_ignored(pos)

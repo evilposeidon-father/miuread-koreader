@@ -43,6 +43,7 @@ end
 function Overlay:setRecords(records)
     self.records = type(records) == "table" and records or {}
     self.pos_cache = {}
+    self.cache = {}
     self:invalidate()
 end
 
@@ -53,11 +54,11 @@ end
 
 function Overlay:invalidate()
     self.generation = self.generation + 1
-    self.cache = {}
     self.visible = {}
 end
 
 function Overlay:resetLayout()
+    self.cache = {}
     self.pos_cache = {}
     self:invalidate()
 end
@@ -157,7 +158,7 @@ function Overlay:paintTo(bb, x, y)
     local page = type(document.getCurrentPage) == "function"
         and document:getCurrentPage() or 0
     local can_cache = self.view and self.view.view_mode == "page"
-    local cache_key = tostring(self.generation) .. ":" .. tostring(page)
+    local cache_key = tostring(page)
     local cached = can_cache and self.cache[cache_key] or nil
     local boxes, candidates
     if cached then
