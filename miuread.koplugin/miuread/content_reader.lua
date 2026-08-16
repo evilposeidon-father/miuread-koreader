@@ -1,3 +1,5 @@
+-- WeRead chapter content reader (renamed from reader.lua in 4.5.41).
+-- Fetches chapter HTML/XHTML and builds the EPUB chapter body.
 local Json = require("miuread.json")
 local Protocol = require("miuread.protocol")
 local Cookies = require("miuread.cookies")

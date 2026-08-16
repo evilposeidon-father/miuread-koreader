@@ -6,6 +6,11 @@
 
 - 暂无。
 
+## 4.5.41 - 2026-08-17
+
+- 架构 统一命名边界：把内容抓取模块 `miuread.reader` 更名为 `miuread.content_reader`（保留 `Reader` 类名），与阅读 UI 控制器 `plugin_reader` / `reader_control_center` 等区分，消除「reader.lua 是内容抓取还是阅读 UI」的歧义；更新 main.lua / download_task.lua 三处 require。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）保持 160 个用例全绿；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+
 ## 4.5.40 - 2026-08-17
 
 - 架构 拆 external_annotation_sync.lua 上帝模块第一批：抽出 `miuread.external_annotation_parse` 深模块（9 个纯函数：range 收集/目录签名/章节字段/想法归一/scalar/记录收集/review 拆分/书名关键词清洗），external_annotation_sync.lua 从 1,548 行降至 1,458 行并保留本地别名委托。
