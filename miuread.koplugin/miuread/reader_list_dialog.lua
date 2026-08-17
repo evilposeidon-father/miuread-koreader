@@ -16,6 +16,7 @@ local TransientGuard = require("miuread.transient_guard")
 local Skin = require("miuread.reader_skin")
 local PanelBase = require("miuread.reader_panel_base")
 local Ui = require("miuread.ui_components")
+local UiRows = require("miuread.ui_rows")
 
 local Screen = Device.screen
 local live_dialog
@@ -43,9 +44,23 @@ local Dialog = PanelBase:extend{
 }
 
 function Dialog:_categories()
+    -- Fluency: a categories PROVIDER (e.g. the reader records dialog, which
+    -- queries the annotation mirror per kind) is evaluated once when the
+    -- dialog opens and then frozen; rebuilds on expand/page/tab must not
+    -- re-run SQLite. Mutating actions invalidate the cache before rebuilding.
+    -- The single-items fallback (settings menus etc.) is intentionally NOT
+    -- frozen: those providers re-snapshot checked/state per rebuild.
+    if self._categories_cache ~= nil then return self._categories_cache end
     local categories = resolved(self.opts and self.opts.categories, nil)
-    if type(categories) == "table" and #categories > 0 then return categories end
+    if type(categories) == "table" and #categories > 0 then
+        self._categories_cache = categories
+        return categories
+    end
     return {{key = "all", label = "", items = resolved(self.opts and self.opts.items, {})}}
+end
+
+function Dialog:_invalidate_categories()
+    self._categories_cache = nil
 end
 
 function Dialog:_selected_category()
@@ -86,6 +101,8 @@ function Dialog:_run_item(item, index)
             local ok, err = pcall(item.callback)
             if not ok then logger.warn("[MiuRead][ReaderListDialog] action failed", tostring(err)) end
         end
+        -- The action may have mutated data the categories provider reads.
+        self:_invalidate_categories()
         UIManager:scheduleIn(.04, function()
             if not self.closed then self:_rebuild() end
         end)
@@ -96,65 +113,40 @@ end
 
 function Dialog:_row_widget(item, width, height, index)
     local enabled = item.enabled ~= false
-    local pad = Skin.dp(7, 6, 10)
-    local icon_w = tostring(item.icon or "") ~= "" and Skin.dp(31, 27, 41) or 0
     local value = tostring(item.value or item.post_text or "")
-    local value_w = value ~= "" and math.max(Skin.dp(92, 76, 126), math.floor(width * .30)) or 0
+    local detail = tostring(item.detail or "")
     local inline_actions = self:_inline_actions(item)
     local arrow = item.arrow ~= false and ((#inline_actions > 0) or (item.callback ~= nil and item.keep_open ~= true))
-    local arrow_w = arrow and Skin.dp(15, 13, 20) or 0
-    local gap = Skin.dp(5, 4, 7)
-    local text_w = math.max(1, width - pad * 2 - icon_w - value_w - arrow_w
-        - gap * ((icon_w > 0 and 1 or 0) + (value_w > 0 and 1 or 0) + (arrow_w > 0 and 1 or 0)))
-    local detail = tostring(item.detail or "")
-    local label_h = detail ~= "" and math.floor(height * .52) or height
-    local detail_h = math.max(1, height - label_h)
-
-    local text_layers = OverlapGroup:new{dimen = Geom:new{w = text_w, h = height}, allow_mirroring = false}
-    text_layers[#text_layers + 1] = OffsetContainer:new{
-        x_off = 0, y_off = 0,
-        Ui.textbox(tostring(item.label or item.text or ""), text_w, label_h,
-            Skin.face("cfont", detail ~= "" and 11.1 or 11.6, detail ~= "" and 14.9 or 15.6, detail ~= "" and 9.4 or 9.9), {
-                bold = item.bold == true or item.checked == true,
-                alignment = "left",
-                fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-            }),
-    }
-    if detail ~= "" then
-        text_layers[#text_layers + 1] = OffsetContainer:new{
-            x_off = 0, y_off = label_h,
-            Ui.textbox(detail, text_w, detail_h, Skin.face("smallinfofont", 9.0, 11.9, 7.7), {
-                alignment = "left",
-                fgcolor = enabled and Blitbuffer.COLOR_DARK_GRAY or Blitbuffer.COLOR_GRAY,
-            }),
-        }
-    end
-
-    local row = HorizontalGroup:new{align = "center"}
-    if icon_w > 0 then
-        row[#row + 1] = Ui.icon(tostring(item.icon), icon_w, height - pad * 2, Skin.dp(19, 16, 25), {
-            icon_key = tostring(item.icon),
-            face = Skin.face("cfont", 14.5, 19.5, 12.2),
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-        })
-        row[#row + 1] = HorizontalSpan:new{width = gap}
-    end
-    row[#row + 1] = text_layers
-    if value_w > 0 then
-        row[#row + 1] = HorizontalSpan:new{width = gap}
-        row[#row + 1] = Ui.textbox(value, value_w, height - pad * 2, Skin.face("cfont", 10.5, 13.9, 8.9), {
-            bold = item.value_bold == true or item.checked == true,
-            alignment = "right", halign = "right",
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-        })
-    end
-    if arrow_w > 0 then
-        row[#row + 1] = HorizontalSpan:new{width = gap}
-        row[#row + 1] = Ui.icon("chevron-right", arrow_w, height - pad * 2, Skin.dp(14, 12, 19), {
-            face = Skin.face("cfont", 12.8, 17.2, 10.8),
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-        })
-    end
+    -- Shared row skeleton (same as home rows / control center). Per-surface
+    -- geometry overrides keep this dialog pixel-identical to before.
+    local row = UiRows.build({
+        icon = item.icon or "",
+        label = item.label or item.text or "",
+        subtitle = detail,
+        value = value,
+        enabled = enabled,
+        arrow = arrow,
+        bold = item.bold == true or item.checked == true,
+        value_bold = item.value_bold == true or item.checked == true,
+        callback = item.callback,
+    }, width, height, {
+        pad = Skin.dp(7, 6, 10),
+        icon_w = Skin.dp(31, 27, 41),
+        value_w = math.max(Skin.dp(92, 76, 126), math.floor(width * .30)),
+        chevron_w = Skin.dp(15, 13, 20),
+        gap = Skin.dp(5, 4, 7),
+        icon_gap = Skin.dp(5, 4, 7),
+        label_basis = "height",
+        checked = item.checked == true,
+        icon_size = Skin.dp(19, 16, 25),
+        icon_face = Skin.face("cfont", 14.5, 19.5, 12.2),
+        chevron_size = Skin.dp(14, 12, 19),
+        chevron_face = Skin.face("cfont", 12.8, 17.2, 10.8),
+        label_face = Skin.face("cfont", detail ~= "" and 11.1 or 11.6, detail ~= "" and 14.9 or 15.6, detail ~= "" and 9.4 or 9.9),
+        subtitle_face = Skin.face("smallinfofont", 9.0, 11.9, 7.7),
+        value_face = Skin.face("cfont", 10.5, 13.9, 8.9),
+        value_fg_disabled = Blitbuffer.COLOR_GRAY,
+    })
 
     local tap = TapBox:new{
         dimen = Geom:new{w = width, h = height}, enabled = enabled,
@@ -190,6 +182,8 @@ function Dialog:_inline_actions_widget(item, width, height)
                         logger.warn("[MiuRead][ReaderListDialog] inline action failed", tostring(err))
                     end
                 end
+                -- The action may have mutated the underlying data.
+                self:_invalidate_categories()
                 UIManager:scheduleIn(.05, function()
                     if not self.closed then self:_rebuild() end
                 end)
@@ -290,7 +284,8 @@ function Dialog:_build_content()
     end
     local expanded_h = self.expanded_index and (action_gap + action_h) or 0
     local body_h = visible_slots * row_h + expanded_h
-    local max_h = sh - Skin.dp(24, 20, 36)
+    -- Keep the panel clear of the reader bottom toolbar / page-turn zone.
+    local max_h = sh - Skin.dp(100, 88, 132)
     local panel_h = math.min(max_h, pad * 2 + header_h + subtitle_h + tab_h + body_h + pager_h + Skin.dp(8, 6, 12))
 
     self.dimen = Geom:new{x = 0, y = 0, w = sw, h = sh}

@@ -19,6 +19,7 @@ local TransientGuard = require("miuread.transient_guard")
 local Skin = require("miuread.reader_skin")
 local PanelBase = require("miuread.reader_panel_base")
 local Ui = require("miuread.ui_components")
+local UiRows = require("miuread.ui_rows")
 
 local Screen = Device.screen
 local live_center
@@ -61,41 +62,17 @@ end
 
 function Center:_row_widget(item, width, height)
     local enabled = item.enabled ~= false
-    local pad = Skin.dp(10, 8, 14)
-    local icon = tostring(item.icon or "")
-    local value = tostring(item.value or item.detail or "")
-    local arrow = item.arrow ~= false and item.callback ~= nil
-    local icon_w = Skin.dp(34, 28, 46)
-    local arrow_w = arrow and Skin.dp(18, 15, 24) or 0
-    local value_w = value ~= "" and math.max(Skin.dp(94, 78, 128), math.floor(width * .34)) or 0
-    local gap = Skin.dp(5, 4, 7)
-    local label_w = math.max(1, width - pad * 2 - icon_w - value_w - arrow_w
-        - gap * ((value_w > 0 and 1 or 0) + (arrow_w > 0 and 1 or 0)))
-    local inner_h = math.max(1, height - pad * 2)
-
-    local row = HorizontalGroup:new{align = "center"}
-    row[#row + 1] = list_icon(icon, icon_w, inner_h, enabled)
-    row[#row + 1] = Ui.textbox(tostring(item.label or item.text or ""), label_w, inner_h,
-        Skin.face("cfont", 10.9, 14.8, 9.4), {
-            bold = item.bold == true, alignment = "left",
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-        })
-    if value_w > 0 then
-        row[#row + 1] = HorizontalSpan:new{width = gap}
-        row[#row + 1] = Ui.textbox(value, value_w, inner_h,
-            Skin.face("cfont", 10.0, 13.3, 8.5), {
-                bold = item.value_bold == true, alignment = "right", halign = "right",
-                fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY,
-            })
-    end
-    if arrow_w > 0 then
-        row[#row + 1] = HorizontalSpan:new{width = gap}
-        row[#row + 1] = Ui.icon("chevron-right", arrow_w, inner_h, Skin.dp(15, 13, 20), {
-            face = Skin.face("cfont", 13.2, 17.8, 11),
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY,
-        })
-    end
-
+    -- Shared icon+label+value+chevron skeleton (same as 我的页 rows).
+    local row = UiRows.build({
+        icon = item.icon or "",
+        label = item.label or item.text or "",
+        value = item.value or item.detail or "",
+        enabled = enabled,
+        arrow = item.arrow ~= false,
+        bold = item.bold == true,
+        value_bold = item.value_bold == true,
+        callback = item.callback,
+    }, width, height)
     local tap = TapBox:new{
         dimen = Geom:new{w = width, h = height},
         enabled = enabled,

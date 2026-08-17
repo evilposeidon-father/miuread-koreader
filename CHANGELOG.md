@@ -6,6 +6,56 @@
 
 - 暂无。
 
+## 4.6.2 - Unreleased
+
+- 修复 时长卡显示 0 分钟：格式化函数 pcall 传参错误（点号定义被当 self 传入，秒数变表→tonumber=nil→0）；改为直接调用，卡片与弹窗数值一致（真机日志定位：查询秒数正确、仅格式化环节出错）。
+- 修复 今日/本周时长按 UTC 日界计算：Kindle 进程时区与显示时区不一致，凌晨阅读被算进「昨天」导致今日 0；日界/周界改用纯日历算术 + 显示时区偏移（mode=device 且设备偏移为 0 时回退配置 offset）。
+- 修复 返回首页后切「书城/我的」偶发无响应：阅读器关闭后 parked HomeView 仍在恢复，切 tab 的 nextTick 判不可见即丢弃点击；改为未显示时每 0.25s 重试（上限 6 次），不再吞点击。
+- 修复 时长卡刷新不生效/与周报不一致：卡片读取走 reading_stats 默认 30s 缓存（显示旧值），弹窗用 force=true（新值）——卡片改为强制重读，点击刷新立即更新、与周报一致。
+- 体验 我的页时长卡与「阅读周报」统一数据源（KOReader 阅读统计）：页面今日/本周与弹窗数值一致；时长卡点击=刷新阅读时长（重算+toast），「阅读周报」入口移入列表行。
+- 体验 休眠按钮先同步再息屏：点击休眠→上传批注/想法与阅读时长→提示「已同步，即将休眠」或「同步未完成，即将休眠」→再息屏（8 秒超时兜底）；电源键息屏触发批注同步，恢复后提示结果。
+- 修复 真机今日/本周时长「写入后读不到」：KOReader 对非 doc-only 插件在首页与阅读器各实例化一次，每次 Plugin:init() 都 Store:new() → 两个独立 settings db——阅读实例写账本（内存+文件），被 park 在阅读器下的首页实例用旧内存 flush 覆盖文件，账本消失、home 读 nil。Store:new 对同 settings_path 的非隔离实例改为单例复用（isolated worker 不受影响），跨实例共享 db。
+- 修复 阅读记录列表重复：镜像行是原生划线的快照（同 pos0、不同 id 体系），列表把每条划线显示两次（37 原生 + 37 镜像 = 19 页）——按 pos0 位置去重，同位置镜像跳过，列表回归真实条数。
+- 修复 阅读记录镜像行跳转失败：镜像行 xpointer 为空（本机快照只存本地 pos0），跳转却取 xpointer → 永远失败；改用 pos0（本地坐标）跳转，本机划线跳转恢复。
+- 修复 阅读周报与我的页时长不一致：两处统一为 KOReader 阅读统计（用户拍板，页面与弹窗数值一致）。
+- 修复 阅读记录云端划线跳转静默失败：云端坐标（微信读书 range）在本地 EPUB 里 getPosFromXPointer 必失败，跳转前先预检本地可定位性，失败提示「该划线来自云端，本机暂未定位到对应位置」（外部划线 locate 匹配质量另立专项）。
+- 修复 真机「我的批注」闪退：local_annotation_database.recent_all 在 database_paths（local 声明于文件后部）之前调用，词法作用域使其变全局查找 nil；database_paths 上移至文件头，新增空 store 回归测试（本地套件此前未覆盖 recent_all 未抓到）。
+- 修复 底部三 Tab 切换弹「书架/书城/我的」提示窗：_refresh_home_view 对非空 message 一律 toast，切 tab 不再传页面名（书籍信息更新等提示保留）。
+- 修复/诊断 今日/本周时长未显示：账本写入/读取路径加 [MiuRead][Ledger] 诊断日志（add/final flush/home read），真机重测一次即可定位。
+- 流畅 稳定性五角色复审落地：划线覆盖层增量更新保留位置缓存（setRecords 只按记录失效受影响项，章节同步不再清空缓存导致翻页 2N 次 XPointer 重算）；paintTo 取当前页改 pcall 多值安全（页码缓存不再偶发断裂）；nearest 冷查询加负缓存（未命中的位置只查一次）。
+- 流畅 阅读记录/列表对话框的 categories 提供器打开时一次性求值并冻结：展开行/翻页/切 Tab 不再每次重建重跑批注库查询（此前每次交互 3×400 行 SQLite）；keep_open/内联操作等管理动作先失效缓存再重建，数据即时刷新；单列表 items 提供器（设置菜单等需逐次重快照勾选态）保持每次重建求值。
+- 流畅 划线样式切换去抖合帧 + 局部重绘：菜单内连选样式不再每次全屏 flash——updateHighlightDrawer 已即时应用状态，最后一次点击 0.25s 后对阅读面做一次 "ui" 重绘。
+- 流畅 外部划线覆盖层位置预热分帧化：章节同步/整书同步/重排后不再在下一帧绘制路径内同步 2N 次 XPointer 定位（每次调度帧最多预热 32 条，缺失位置查询与绘制/nearest 共用同一 lookup 与 30s 负缓存）；nearest 负缓存加 TTL（瞬时失败 30s 后重试，不再永久跳过）。
+- 流畅 阅读记录页码换算按「书|xpointer」记忆化：同一位置在原生列表与镜像行合并时只转换一次，打开阅读记录不再逐条重复 CREngine 调用。
+- 流畅 批注面板打开不再同步全量镜像 upsert：镜像刷新延迟 0.15s 移出打开关键路径 + 15s 节流（任意成功快照武装节流），面板立即渲染，计数/记录读照常。
+- 流畅 我的批注列表打开不再全库扫描：recent_all 按批注库 mtime 只扫描最近 12 本书的 SQLite（默认上限 200→100）+ 30s 短期缓存（本模块全部写入与首页批注管理流显式失效），重复打开零扫描、管理删除后立即刷新。
+- 稳定 同步守护进程的阅读时长归账：daemon 成功分支补记 read_time_ledger（与直接上传路径同源同秒），今日/本周时长不再漏记守护进程同步的时间；save_session 改延迟落盘、退出时统一补刷账本。
+- 稳定 选词菜单设置不再覆盖用户全局配置：显示/隐藏选择菜单的开关只作用于 MiuRead 书（orig 保存/恢复 + saveHighlight 守卫），退出书籍后用户 KOReader 原设置原样保留。
+- 界面 对齐微信读书手机端：首页改为底部三 Tab（书架/书城/我的）——书城页=搜索微信读书+公众号（线上分类待验证，本地内容不伪装成书城），我的页=账号状态+阅读时长卡（本机统计）+我的想法/划线/书架管理/阅读历史/设置；标题保留「觅阅」（微信读书为对齐目标，不冒充官方）。
+- 界面 书架页：继续阅读大卡新增进度条与「继续阅读」标题；书架排序（最近阅读/最近加入/书名/作者，首页与书架→书架排序）；空书架提示「去书城逛逛吧」并一键跳转；来源分组（书架/已下载/本地书籍/公众号）作为页内分组保留。
+- 阅读 快捷面板五组前置（更多/目录/进度 + 字体/亮度行）：新增「更多」入口直达控制中心（书签/想法/划线/搜索/设置）；存量用户迁移保留自定义按键排序与显隐（仅「更多」置首，超 8 项转为隐藏不丢失）。
+- 阅读 夜间模式核对为 KOReader 原生 night_mode（快捷面板设备行/控制中心切换）；护眼米/纯白靠齐（cre 正文底色不可改）；长按选词=自动下划线主路径，笔记=点击划线弹层，复制/查词仅非自动划线书籍可用。
+- 界面 我的页时长卡新增「阅读周报 ›」入口并标注本机统计口径（与手机端云端计数不同源）。
+- 体验 底部 Tab 切换防抖（e-ink 连点不重复全量重建）与切页即时反馈；书城/我的页触控行高 ≥50dp。
+- 统一 行组件全集收敛：miuread.ui_rows 提供纯几何（M.geometry，可无头断言）与双模式行布局（icon+label+副标题/右值+chevron），阅读记录/搜索/批注、阅读设置、我的页/书城行、控制中心全部同一骨架（几何覆写保证逐表面像素等价）；action_sheet/full_shelf_view 换用 Skin.frame；home_cards 的 UiScale.radius/line 全部换 Skin（结构守卫锁定：禁 Ui.frame/UiScale.radius/UiScale.line 回退、ui_rows 禁引 TapBox/tappable）。
+- 统一 收尾：周界/时长格式并源（read_time_ledger.week_start 单源，HomeData 委托）；评论→想法术语统一；兜底文案（书页书签/无文字内容）入 annotation_kinds；home_view/快捷面板/本地浏览器换 Skin.frame（双轨清零）；控制中心设备分类新增「阅读界面设置」直达入口；结构守卫 +3（Ui.frame 清零、周界并源、兜底文案单点）。
+- 统一 视觉基线单源化：外部页面卡片/行组件改用与阅读器同一套令牌（home_cards 统一到 Skin.frame；新增 miuread.ui_rows 共享行布局，我的页行与控制中心行同构；Skin.frame 补 margin 成为 Ui.frame 超集；结构守卫禁止 home_cards 回退 Ui.frame）。
+- 统一 批注类型（书签/划线/想法）标签与图标内外单源：新增 miuread.annotation_kinds，阅读批注记录、外部「我的批注/搜索」与诊断日志共用同一套词与图标（此前 5 处重复定义，杜绝漂移）。
+- 阅读 新增「默认划线样式」（阅读界面设置）：下划线（默认）/ 浅底 / 反白——微信读书划线样式的墨水屏灰阶靠齐（波浪线无替代，用反白）；新书首次划线应用所选样式（默认种子），阅读中切换即时重绘已有划线（单写者：doc_settings.saved_drawer + updateHighlightDrawer）。
+- 阅读 新增「本章想法」（控制中心 → 阅读 → 本章想法）：聚合当前章已同步的划线与想法（按章内位置排序，想法/划线图标区分），点击跳转正文；空态区分「未同步/暂无想法」；纯函数 filter_records_by_chapter 按 chapter_uid 精确匹配、空 uid 按 chapter_idx 兜底。
+- 阅读 章节行进度显示「剩余 N 页」（与页码同源，微读习惯）；新增「选词后显示选择菜单」设置（阅读界面设置，默认关，B12 缓解：开启后 MiuRead 书选词保留复制/查词/划线菜单；阅读中切换即时生效；首次划线给一次性引导提示）。
+- 体验 书城/公众号搜索无结果文案统一为「换个关键词试试」。
+- 阅读 快捷面板状态行新增「今日阅读时长」：与「我的」页时长卡共用同一账本（上传微信读书的同一秒数），阅读中即可见当日时长。
+- 可观测 新增操作日志与崩溃上报骨架：`miuread.oplog` 环形记录最近 200 条后台操作（同步/下载/认证/崩溃上报），失败路径自动入日志；`miuread.crash_report` + `miuread.plugin_crash_report` 提供 opt-in 崩溃检测（启动时对比 crash.log 增量，生成含版本/设备/偏好 + crash 尾部 + 最近操作的脱敏报告，无端点时保存到 temp/crash-reports）；`miuread.diagnostic_context` 统一收集版本/设备/偏好并自动脱敏（token/cookie/secret/api_key 等）。
+- 修复 登录失效显示不一致：首页显示已登录、打开书籍静默同步报「微信读书登录验证失败」——续期被服务器拒绝（HTTP 40x / 未接受续期）时归一化为 `[MiuReadAuth] error_code=-2012` 标记；repair 路径（force）与 fail() 的认证分支均回写 auth.health，`logged_in()` 立即感知服务端会话失效，首页同步显示「需要重新登录」，重新扫码后恢复。
+- 体验 会话预防性保活：打开书籍与每日定时（≥24h 间隔 + 随机抖动）静默调用 /web/login/renewal 续期微信读书 Web 会话，延长会话寿命、降低会话被服务端回收后被迫重新扫码的频率；续期失败静默记录（oplog + 回写登录状态），不打断阅读。
+- 阅读 新增「最近批注」快捷操作（阅读快捷面板，默认未启用可在替换按键中开启）：点击即定位当前阅读位置最近的云端划线/想法并弹出批注窗口，覆盖本人与网友批注；overlay 新增数值位置距离计算（Overlay:nearest），复用位置缓存避免重复 XPointer 查询。
+- 批注 本地书同步合并个人与全量数据：个人书签/想法（bookmark_list + review_list_mine）不再独占同步流程，而是与逐章全量划线/想法（含网友）合并去重后一起显示；全量路径不可用时自动回退为「仅个人书签/想法」，中途失败也会落盘已收集的个人数据。
+- 诊断 手动诊断包（工具与维护 → 生成诊断包）新增 oplog.txt（最近 200 条操作）与 context.txt（脱敏上下文）。
+- 同步 sync.lua 失败路径埋点：progress_pull / read_report worker / upload / service / epub_identity 失败均写入操作日志，配合诊断包与崩溃报告可还原失败前操作序列。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 232 个用例：新增 oplog 7、crash_report 8、diagnostic_context 5、auth_errors 5、keepalive 7、report_daemon 5、home_page 10（normalize_page/sort_rows）、reader_quick 6（QUICK_DEFAULT_VISIBLE/migrate_quick_actions）等纯逻辑单测；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
+- 测试 Lua 5.1 无头套件 256 个用例、结构守卫 26 项全绿：新增 recent_all 空 store 回归（database_paths 词法可见性）、overlay 分帧预热/负缓存 TTL、xpointer_overlay 多值 pcall、read_time_ledger 周界、ui_rows 几何、annotation_kinds 兜底等单测。
+
 ## 4.5.49 - 2026-08-17
 
 - 修复 闪退：回滚 4.5.45 对「实例化类」的惰性加载（downloader/download_task/annotations/annotation_sync/cache_cleanup_task/content_reader 等）。Lazy 代理不能作为实例 metatable，`X:new()` 生成的实例方法查找会失效导致首页 shelf 刷新时 `busy` 调用崩溃；这些类改回启动即加载，并新增结构守卫防回归。

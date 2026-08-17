@@ -38,7 +38,8 @@ end
 
 local OffsetContainer = Ui.OffsetContainer
 
-local fixed_frame = Ui.frame
+local Skin = require("miuread.reader_skin")
+local fixed_frame = Skin.frame
 
 -- Clean chat-bubble pointer. It uses the same black outline and white fill as
 -- the panel and overlaps the panel border slightly so the tail reads as one
@@ -49,7 +50,7 @@ function BubblePointer:paintTo(bb, x, y)
     if not bb or type(bb.paintRect) ~= "function" then return end
     local w = math.max(9, math.floor(tonumber(self.width) or 20))
     local h = math.max(5, math.min(18, math.floor(tonumber(self.height) or 10)))
-    local t = math.max(1, UiScale.line("thin"))
+    local t = math.max(1, Skin.line("thin"))
     local denom = math.max(1, h - 1)
     for row = 0, h - 1 do
         local step = self.direction == "down" and (h - 1 - row) or row
@@ -98,9 +99,9 @@ function SheetWidget:_card(action, width, height, seed)
     local fallback_icon = action.danger and "!" or (U.utf8_len(icon) <= 2 and icon or "•")
     local label = tostring(action.label or action.text or "")
     local detail = tostring(action.detail or "")
-    local pad = UiScale.dp(6, 5, 9)
-    local icon_w = UiScale.dp(32, 29, 44)
-    local arrow_w = action.submenu == true and UiScale.dp(17, 15, 23) or 0
+    local pad = Skin.dp(6, 5, 9)
+    local icon_w = Skin.dp(32, 29, 44)
+    local arrow_w = action.submenu == true and Skin.dp(17, 15, 23) or 0
     local inner_h = math.max(1, height - pad * 2)
     local text_w = math.max(1, width - pad * 2 - icon_w - arrow_w)
     local label_h = detail ~= "" and math.floor(inner_h * .55) or inner_h
@@ -135,7 +136,7 @@ function SheetWidget:_card(action, width, height, seed)
 
     local content = HorizontalGroup:new{
         align = "center",
-        Ui.icon(icon, icon_w, inner_h, UiScale.dp(24, 21, 31), {
+        Ui.icon(icon, icon_w, inner_h, Skin.dp(24, 21, 31), {
             icon_key = tostring(action.icon_key or icon),
             icon_path = action.icon_path,
             face = UiScale.iconFace("cfont", 14.2, 20.5, 12),
@@ -157,8 +158,8 @@ function SheetWidget:_card(action, width, height, seed)
     end
 
     local card=fixed_frame(width,height,{
-        bordersize=UiScale.line("thin"),padding=pad,
-        radius=UiScale.radius(7,5,11),background=Blitbuffer.COLOR_WHITE,
+        bordersize=Skin.line("thin"),padding=pad,
+        radius=Skin.radius(7,5,11),background=Blitbuffer.COLOR_WHITE,
         color=action.danger and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
     },content)
     return tappable(width, height, card, function()
@@ -199,7 +200,7 @@ function SheetWidget:_footer_group(actions, width, height)
         end
     end
     if #visible == 0 then return nil end
-    local gap = UiScale.dp(4, 3, 6)
+    local gap = Skin.dp(4, 3, 6)
     local cell_w = math.floor((width - gap * (#visible - 1)) / #visible)
     local row = HorizontalGroup:new{align = "center"}
     for index, action in ipairs(visible) do
@@ -247,9 +248,9 @@ function SheetWidget:_build()
         end
     end
 
-    local outer_margin = UiScale.dp(10, 8, 18)
-    local pad = UiScale.dp(10, 8, 15)
-    local gap = UiScale.dp(8, 6, 12)
+    local outer_margin = Skin.dp(10, 8, 18)
+    local pad = Skin.dp(10, 8, 15)
+    local gap = Skin.dp(8, 6, 12)
     local count = #actions
     local ratio
     if self.opts.width_ratio then
@@ -262,21 +263,21 @@ function SheetWidget:_build()
         ratio = metrics.portrait and .78 or .64
     end
     ratio = clamp(ratio or .74, .44, .86)
-    local min_w = math.min(sw - outer_margin * 2, UiScale.dp(300, 270, 500))
+    local min_w = math.min(sw - outer_margin * 2, Skin.dp(300, 270, 500))
     local panel_w = math.floor(clamp(sw * ratio, min_w, sw - outer_margin * 2) + .5)
     local inner_w = math.max(1, panel_w - pad * 2)
 
     local has_title = tostring(self.opts.title or "") ~= ""
     local has_subtitle = tostring(self.opts.subtitle or "") ~= ""
-    local title_h = has_title and UiScale.dp(has_subtitle and 32 or 29, has_subtitle and 29 or 26, has_subtitle and 44 or 39) or 0
-    local subtitle_h = has_subtitle and UiScale.dp(21, 19, 29) or 0
+    local title_h = has_title and Skin.dp(has_subtitle and 32 or 29, has_subtitle and 29 or 26, has_subtitle and 44 or 39) or 0
+    local subtitle_h = has_subtitle and Skin.dp(21, 19, 29) or 0
     local requested_columns=math.max(1,math.min(3,math.floor(tonumber(self.opts.columns) or 0)))
-    local card_h = requested_columns==3 and UiScale.dp(64,58,84) or UiScale.dp(58,53,79)
+    local card_h = requested_columns==3 and Skin.dp(64,58,84) or Skin.dp(58,53,79)
     local footer_action = type(self.opts.footer_action) == "table" and self.opts.footer_action or nil
     local footer_actions = type(self.opts.footer_actions) == "table" and self.opts.footer_actions or nil
     local has_footer_actions = footer_actions and #footer_actions > 0
-    local footer_h = (footer_action or has_footer_actions) and UiScale.dp(39, 35, 52) or 0
-    local footer_gap_h = footer_h > 0 and UiScale.dp(8, 7, 12) or 0
+    local footer_h = (footer_action or has_footer_actions) and Skin.dp(39, 35, 52) or 0
+    local footer_gap_h = footer_h > 0 and Skin.dp(8, 7, 12) or 0
     local show_close = self.opts.show_close == true
     if show_close and count < MAX_PRIMARY_ACTIONS then
         actions[#actions + 1] = {icon = "×", label = tostring(self.opts.close_label or "关闭"), close_only = true}
@@ -360,9 +361,9 @@ function SheetWidget:_build()
     end
 
     local panel = fixed_frame(panel_w, panel_h, {
-        bordersize = UiScale.line("thick"),
+        bordersize = Skin.line("thick"),
         padding = pad,
-        radius = UiScale.radius(13, 10, 22),
+        radius = Skin.radius(13, 10, 22),
         background = Blitbuffer.COLOR_WHITE,
         color = Blitbuffer.COLOR_BLACK,
     }, list)
@@ -370,9 +371,9 @@ function SheetWidget:_build()
     local anchor = normalized_anchor(self.opts.anchor)
     local x = math.floor((sw - panel_w) / 2)
     local y = math.floor((sh - panel_h) / 2)
-    local pointer_w = UiScale.dp(22, 18, 30)
-    local pointer_h = UiScale.dp(10, 8, 14)
-    local pointer_overlap = math.max(1, UiScale.line("thin") + 1)
+    local pointer_w = Skin.dp(22, 18, 30)
+    local pointer_h = Skin.dp(10, 8, 14)
+    local pointer_overlap = math.max(1, Skin.line("thin") + 1)
     local pointer_direction, pointer_x, pointer_y
     if anchor then
         local center_x = anchor.x + anchor.w / 2
@@ -398,8 +399,8 @@ function SheetWidget:_build()
         end
         if pointer_direction then
             pointer_x = math.floor(clamp(center_x - pointer_w / 2,
-                x + UiScale.dp(18, 14, 28),
-                x + panel_w - pointer_w - UiScale.dp(18, 14, 28)) + .5)
+                x + Skin.dp(18, 14, 28),
+                x + panel_w - pointer_w - Skin.dp(18, 14, 28)) + .5)
         end
     else
         x = math.floor(clamp(x, outer_margin, sw - outer_margin - panel_w) + .5)

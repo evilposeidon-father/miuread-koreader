@@ -2,9 +2,25 @@ local DataStorage = require("datastorage")
 local Device = require("device")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
+local ReadTimeLedger = require("miuread.read_time_ledger")
+local TimeZone = require("miuread.timezone")
 
 local HomeData = {}
 local stats_cache
+
+-- Days since 1970-01-01 for a civil date; timezone-independent pure math.
+local function days_from_civil(year, month, day)
+    year = tonumber(year) or 1970
+    month = tonumber(month) or 1
+    day = tonumber(day) or 1
+    year = year - (month <= 2 and 1 or 0)
+    local era = math.floor(year / 400)
+    local yoe = year - era * 400
+    local mp = month + (month > 2 and -3 or 9)
+    local doy = math.floor((153 * mp + 2) / 5) + day - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    return era * 146097 + doe - 719468
+end
 local device_cache
 
 local function clamp_number(value, minimum, maximum)
@@ -14,12 +30,10 @@ local function clamp_number(value, minimum, maximum)
     return value
 end
 
+-- Single duration formatter: the ledger and the local statistics card share
+-- one implementation (backend wrap-up review).
 function HomeData.format_duration(seconds)
-    seconds = math.max(0, math.floor(tonumber(seconds) or 0))
-    local hours = math.floor(seconds / 3600)
-    local minutes = math.floor((seconds % 3600) / 60)
-    if hours > 0 then return tostring(hours) .. " 小时 " .. tostring(minutes) .. " 分" end
-    return tostring(minutes) .. " 分钟"
+    return ReadTimeLedger.format(seconds)
 end
 
 function HomeData.reading_stats(force)
@@ -40,12 +54,31 @@ function HomeData.reading_stats(force)
         local result
         local query_ok, query_error = pcall(function()
             conn:exec("PRAGMA busy_timeout=180;")
-            local date = os.date("*t", now)
-            local day_start = os.time{
-                year = date.year, month = date.month, day = date.day,
-                hour = 0, min = 0, sec = 0,
-            }
-            local week_start = day_start - ((date.wday + 5) % 7) * 86400
+            -- Day/week boundaries follow the MiuRead display timezone, not the
+            -- process TZ (Kindle systems are typically UTC; os.date would put
+            -- early-morning Shanghai reading into "yesterday", making 今日 0).
+            local time_display = {}
+            local ok_td, td = pcall(function()
+                local Store = require("miuread.store")
+                return Store:new():preferences().time_display
+            end)
+            if ok_td and type(td) == "table" then time_display = td end
+            local offset_min = tonumber(TimeZone.offset_minutes(time_display, now)) or 0
+            if offset_min == 0 and (time_display.mode or "device") == "device" then
+                -- device mode on a UTC host (Kindle systems are typically UTC):
+                -- fall back to the configured zone offset so 今日 follows the
+                -- user's clock instead of the UTC calendar day.
+                offset_min = tonumber(time_display.offset_minutes) or 0
+            end
+            -- Display-zone local calendar via the UTC interpretation of
+            -- (now + offset); the day/week boundary then uses pure civil
+            -- arithmetic so the process TZ can never skew it.
+            local ld = os.date("!*t", now + offset_min * 60)
+            local day_start = days_from_civil(ld.year, ld.month, ld.day) * 86400
+                - offset_min * 60
+            -- wday: 1=Sunday..7=Saturday; Monday-anchored week.
+            local days_back = (ld.wday + 5) % 7
+            local week_start = day_start - days_back * 86400
             local statement = conn:prepare([[
                 SELECT COALESCE(SUM(duration), 0),
                        COUNT(DISTINCT (id_book || ':' || page))

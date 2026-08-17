@@ -33,7 +33,8 @@ end
 
 local OffsetContainer = Ui.OffsetContainer
 
-local fixed_frame = Ui.frame
+local Skin = require("miuread.reader_skin")
+local fixed_frame = Skin.frame
 
 local TapBox = Ui.TapBox
 
@@ -71,8 +72,8 @@ end
 function ControlSlider:paintTo(bb,x,y)
     self.dimen.x,self.dimen.y=x,y
     self.slide_dimen.x,self.slide_dimen.y=x,y
-    local track_h=math.max(UiScale.line("medium"),UiScale.dp(4,3,6))
-    local marker=UiScale.dp(12,10,16)
+    local track_h=math.max(Skin.line("medium"),Skin.dp(4,3,6))
+    local marker=Skin.dp(12,10,16)
     local bar_y=y+math.floor((self.dimen.h-track_h)/2)
     local ratio=self:_ratio()
     local fill_w=math.max(track_h,math.floor(self.bar_w*ratio))
@@ -117,7 +118,7 @@ function ControlSlider:onPanSlide(_,ges)
     if not horizontal and relative then
         local dx=math.abs(tonumber(relative.x) or 0)
         local dy=math.abs(tonumber(relative.y) or 0)
-        horizontal=dx>=UiScale.dp(8,6,12) and dx>dy*1.25
+        horizontal=dx>=Skin.dp(8,6,12) and dx>dy*1.25
     end
     if not horizontal then return true end
     return self:_set_from_position(ges,false)
@@ -129,16 +130,16 @@ local function panel_button(entry, width, height, close_callback, compact, owner
     local icon = tostring(entry.icon_key or entry.icon or "")
     local enabled = entry.enabled ~= false
     local has_detail = detail ~= ""
-    local dense = compact and width < UiScale.dp(104, 90, 136)
-    local pad = UiScale.dp(dense and 2 or (compact and 3 or 4), 2, dense and 4 or 6)
+    local dense = compact and width < Skin.dp(104, 90, 136)
+    local pad = Skin.dp(dense and 2 or (compact and 3 or 4), 2, dense and 4 or 6)
     local inner_w = math.max(1, width - pad * 2)
-    local gap_h = UiScale.dp(dense and 2 or 3, 2, dense and 4 or 5)
-    local icon_slot_h = UiScale.dp(dense and 31 or (compact and 34 or 38), dense and 28 or (compact and 30 or 34), dense and 40 or (compact and 44 or 50))
-    local label_slot_h = UiScale.dp(dense and 30 or (compact and 31 or 34), dense and 27 or (compact and 27 or 30), dense and 38 or (compact and 40 or 44))
+    local gap_h = Skin.dp(dense and 2 or 3, 2, dense and 4 or 5)
+    local icon_slot_h = Skin.dp(dense and 31 or (compact and 34 or 38), dense and 28 or (compact and 30 or 34), dense and 40 or (compact and 44 or 50))
+    local label_slot_h = Skin.dp(dense and 30 or (compact and 31 or 34), dense and 27 or (compact and 27 or 30), dense and 38 or (compact and 40 or 44))
     -- Reserve the same third line in every cell. Without this, Wi-Fi (which
     -- has an SSID detail) becomes taller and its icon is vertically shifted.
-    local detail_slot_h = UiScale.dp(dense and 19 or (compact and 20 or 22), dense and 17 or (compact and 18 or 20), dense and 24 or (compact and 26 or 29))
-    local icon_size = UiScale.dp(dense and 24 or (compact and 27 or 30), dense and 22 or (compact and 24 or 27), dense and 31 or (compact and 35 or 39))
+    local detail_slot_h = Skin.dp(dense and 19 or (compact and 20 or 22), dense and 17 or (compact and 18 or 20), dense and 24 or (compact and 26 or 29))
+    local icon_size = Skin.dp(dense and 24 or (compact and 27 or 30), dense and 22 or (compact and 24 or 27), dense and 31 or (compact and 35 or 39))
 
     local label_box=Ui.textbox(label, inner_w, label_slot_h,
         face("smallinfofont", dense and 10.5 or (compact and 11.6 or 12.3), dense and 13.6 or (compact and 14.8 or 16.0), dense and 9.2 or (compact and 10.1 or 10.7)), {
@@ -291,11 +292,11 @@ function QuickPanelWidget:_build()
     self._sliders={}
     local scale = UiScale.metrics()
     local sw, sh = scale.sw, scale.sh
-    local margin = math.max(UiScale.dp(11, 9, 18), math.floor(scale.short * .018))
-    local gap = UiScale.dp(6, 5, 10)
-    local button_gap = UiScale.dp(4, 3, 6)
+    local margin = math.max(Skin.dp(11, 9, 18), math.floor(scale.short * .018))
+    local gap = Skin.dp(6, 5, 10)
+    local button_gap = Skin.dp(4, 3, 6)
     local buttons = type(self.opts.buttons) == "table" and self.opts.buttons or {}
-    local line = UiScale.line("thin")
+    local line = Skin.line("thin")
 
     -- The pull-down shortcut strip uses the actual visible count (up to eight).
     -- Hidden/unsupported controls therefore never leave dead space on the right.
@@ -312,12 +313,12 @@ function QuickPanelWidget:_build()
             local ok,value=pcall(frontlight.get_night); if ok then self._night_enabled=value==true end
         end
     end
-    local frontlight_h=frontlight and UiScale.dp(warmth and 142 or 94,warmth and 126 or 84,warmth and 182 or 122) or 0
+    local frontlight_h=frontlight and Skin.dp(warmth and 142 or 94,warmth and 126 or 84,warmth and 182 or 122) or 0
 
-    local title_h = UiScale.dp(52, 47, 70)
-    local button_h = UiScale.dp(98, 90, 128)
-    local footer_h = (self.opts.on_customize or self.opts.on_tools) and UiScale.dp(48, 43, 64) or 0
-    local status_h = (self.opts.status_text and self.opts.status_text ~= "") and UiScale.dp(34, 30, 46) or 0
+    local title_h = Skin.dp(52, 47, 70)
+    local button_h = Skin.dp(98, 90, 128)
+    local footer_h = (self.opts.on_customize or self.opts.on_tools) and Skin.dp(48, 43, 64) or 0
+    local status_h = (self.opts.status_text and self.opts.status_text ~= "") and Skin.dp(34, 30, 46) or 0
 
     self.panel_h = margin * 2 + title_h + line + gap * 2
     if rows > 0 then
@@ -338,13 +339,13 @@ function QuickPanelWidget:_build()
     local children = OverlapGroup:new{dimen = self.dimen:copy(), allow_mirroring = false}
     self:_add(children, 0, 0, fixed_frame(sw, self.panel_h, {background = Blitbuffer.COLOR_WHITE}))
 
-    local close_w = UiScale.dp(92, 80, 120)
-    local battery_w = UiScale.dp(98, 84, 126)
+    local close_w = Skin.dp(92, 80, 120)
+    local battery_w = Skin.dp(98, 84, 126)
     local time_w = math.max(1, sw - margin * 2 - close_w - battery_w - gap * 2)
 
     local time_box=Ui.text(tostring(self.opts.time_text or os.date("%H:%M")), time_w, title_h,
         face("cfont", 20.5, 28.5), {bold = true, halign = "left"})
-    local battery_text_w=math.max(1,battery_w-UiScale.dp(28,24,38))
+    local battery_text_w=math.max(1,battery_w-Skin.dp(28,24,38))
     local battery_box=Ui.text(tostring(self.opts.battery_text or "未知"),battery_text_w,title_h,
         face("smallinfofont",11.8,16),{bold=true})
     self._text_refs.time=time_box and time_box[1]
@@ -357,8 +358,8 @@ function QuickPanelWidget:_build()
             dimen=Geom:new{w=battery_w,h=title_h},
             HorizontalGroup:new{
                 align="center",
-                Ui.icon("battery",UiScale.dp(25,22,33),title_h,UiScale.dp(19,17,25),{icon_key="battery"}),
-                HorizontalSpan:new{width=UiScale.dp(3,2,5)},
+                Ui.icon("battery",Skin.dp(25,22,33),title_h,Skin.dp(19,17,25),{icon_key="battery"}),
+                HorizontalSpan:new{width=Skin.dp(3,2,5)},
                 battery_box,
             },
         },
@@ -396,16 +397,16 @@ function QuickPanelWidget:_build()
         })
         y=y+line+gap
         local content_w=sw-margin*2
-        local header_h=UiScale.dp(36,32,47)
-        local button_w=UiScale.dp(116,100,150)
-        local header_gap=UiScale.dp(7,5,10)
+        local header_h=Skin.dp(36,32,47)
+        local button_w=Skin.dp(116,100,150)
+        local header_gap=Skin.dp(7,5,10)
         local title_w=math.max(1,content_w-button_w*2-header_gap*2)
-        local toggle_text=Ui.text(self._frontlight_enabled and "关闭前光" or "开启前光",button_w-UiScale.dp(6,4,8),header_h,face("smallinfofont",9.6,13.2),{bold=true})
-        local night_text=Ui.text(self._night_enabled and "夜间：开" or "夜间：关",button_w-UiScale.dp(6,4,8),header_h,face("smallinfofont",9.6,13.2),{bold=true})
+        local toggle_text=Ui.text(self._frontlight_enabled and "关闭前光" or "开启前光",button_w-Skin.dp(6,4,8),header_h,face("smallinfofont",9.6,13.2),{bold=true})
+        local night_text=Ui.text(self._night_enabled and "夜间：开" or "夜间：关",button_w-Skin.dp(6,4,8),header_h,face("smallinfofont",9.6,13.2),{bold=true})
         self._text_refs.frontlight_toggle=toggle_text and toggle_text[1]
         self._text_refs.night_toggle=night_text and night_text[1]
         local toggle=tappable(button_w,header_h,
-            fixed_frame(button_w,header_h,{bordersize=UiScale.line("thin"),radius=UiScale.radius(6,5,9),background=Blitbuffer.COLOR_WHITE},toggle_text),
+            fixed_frame(button_w,header_h,{bordersize=Skin.line("thin"),radius=Skin.radius(6,5,9),background=Blitbuffer.COLOR_WHITE},toggle_text),
             function(anchor)
                 if not self:_controls_armed() then return true end
                 if type(frontlight.on_toggle)=="function" then pcall(frontlight.on_toggle,anchor) end
@@ -416,7 +417,7 @@ function QuickPanelWidget:_build()
                 return true
             end)
         local night=tappable(button_w,header_h,
-            fixed_frame(button_w,header_h,{bordersize=UiScale.line("thin"),radius=UiScale.radius(6,5,9),background=Blitbuffer.COLOR_WHITE},night_text),
+            fixed_frame(button_w,header_h,{bordersize=Skin.line("thin"),radius=Skin.radius(6,5,9),background=Blitbuffer.COLOR_WHITE},night_text),
             function(anchor)
                 if not self:_controls_armed() then return true end
                 if type(frontlight.on_night)=="function" then pcall(frontlight.on_night,anchor) end
@@ -428,15 +429,15 @@ function QuickPanelWidget:_build()
             LeftContainer:new{dimen=Geom:new{w=title_w,h=header_h},Ui.text("前光",title_w,header_h,face("cfont",13.4,18.2),{bold=true,halign="left"})},
             HorizontalSpan:new{width=header_gap},toggle,HorizontalSpan:new{width=header_gap},night,
         })
-        y=y+header_h+UiScale.dp(5,4,7)
+        y=y+header_h+Skin.dp(5,4,7)
 
         local function add_slider(setting,label)
             setting=type(setting)=="table" and setting or nil
             if not setting then return end
-            local row_h=UiScale.dp(42,37,54)
-            local label_w=UiScale.dp(72,62,94)
-            local value_w=UiScale.dp(48,42,62)
-            local value_gap=UiScale.dp(5,4,8)
+            local row_h=Skin.dp(42,37,54)
+            local label_w=Skin.dp(72,62,94)
+            local value_w=Skin.dp(48,42,62)
+            local value_gap=Skin.dp(5,4,8)
             local bar_w=math.max(1,content_w-label_w-value_w-value_gap)
             local slider=ControlSlider:new{
                 dimen=Geom:new{w=bar_w+value_gap+value_w,h=row_h},bar_w=bar_w,value_w=value_w,value_gap=value_gap,
@@ -448,7 +449,7 @@ function QuickPanelWidget:_build()
                 LeftContainer:new{dimen=Geom:new{w=label_w,h=row_h},Ui.text(label,label_w,row_h,face("smallinfofont",10.2,14),{bold=true,halign="left"})},
                 slider,
             })
-            y=y+row_h+UiScale.dp(3,2,5)
+            y=y+row_h+Skin.dp(3,2,5)
         end
         add_slider(frontlight.brightness,"亮度")
         if warmth then add_slider(warmth,"色温") end
@@ -482,7 +483,7 @@ function QuickPanelWidget:_build()
         local has_customize = type(self.opts.on_customize) == "function"
         local has_tools = type(self.opts.on_tools) == "function"
         local count = (has_customize and 1 or 0) + (has_tools and 1 or 0)
-        local footer_gap = count > 1 and UiScale.dp(18, 14, 26) or 0
+        local footer_gap = count > 1 and Skin.dp(18, 14, 26) or 0
         local item_w = count > 0 and math.floor((available_w - footer_gap * math.max(0, count - 1)) / count) or available_w
         local x = margin
 
@@ -509,9 +510,9 @@ function QuickPanelWidget:_build()
         end
     end
 
-    self:_add(children, 0, self.panel_h - UiScale.line("thick"), LineWidget:new{
+    self:_add(children, 0, self.panel_h - Skin.line("thick"), LineWidget:new{
         background = Blitbuffer.COLOR_BLACK,
-        dimen = Geom:new{w = sw, h = UiScale.line("thick")},
+        dimen = Geom:new{w = sw, h = Skin.line("thick")},
     })
     self[1] = children
 end

@@ -5,11 +5,48 @@ local logger = require("logger")
 
 local LocalAnnotationDatabase = {}
 
+-- Fluency: the 我的批注 list (recent_all) must not re-scan SQLite files on the
+-- UI thread on every open. The merged result is cached for a short TTL and the
+-- cache is invalidated by every mutator in this module plus the home manage
+-- flow (which may write through other modules). Staleness is bounded by TTL.
+local RECENT_CACHE_TTL = 30
+local recent_cache
+local recent_cache_limit
+local recent_cache_at
+
+function LocalAnnotationDatabase.invalidate_recent_cache()
+    recent_cache = nil
+    recent_cache_limit = nil
+    recent_cache_at = nil
+end
+
 LocalAnnotationDatabase.SCHEMA_VERSION = 5
 LocalAnnotationDatabase.FILE_NAME = "local_annotations.sqlite3"
 
 local function database_path(store, book_id)
     return store:book_dir(book_id) .. "/" .. LocalAnnotationDatabase.FILE_NAME
+end
+
+-- All generated-book annotation SQLite files. Declared before recent_all so
+-- every caller (including 我的批注) resolves the local upvalue; a definition
+-- later in the file would make these calls a global lookup (crash on device,
+-- missed by the headless suite because recent_all had no test).
+local function database_paths(store)
+    local root = tostring(store and store.cache_books_dir or "")
+    local out = {}
+    if root == "" or lfs.attributes(root, "mode") ~= "directory" then return out end
+    local ok, iter, state, var = pcall(lfs.dir, root)
+    if not ok or not iter then return out end
+    while true do
+        local name = iter(state, var)
+        var = name
+        if not name then break end
+        if name ~= "." and name ~= ".." then
+            local path = root .. "/" .. name .. "/" .. LocalAnnotationDatabase.FILE_NAME
+            if lfs.attributes(path, "mode") == "file" then out[#out + 1] = path end
+        end
+    end
+    return out
 end
 
 local function safe_alter(conn, sql)
@@ -199,6 +236,7 @@ end
 --- Replace the current KOReader annotation snapshot without doing network work.
 -- resolver(item, kind) may add chapter/context information while the document is open.
 function LocalAnnotationDatabase.snapshot(store, book_id, annotations, source_path, resolver)
+    LocalAnnotationDatabase.invalidate_recent_cache()
     book_id = tostring(book_id or "")
     if book_id == "" then return nil, "bookId missing" end
     annotations = type(annotations) == "table" and annotations or {}
@@ -354,6 +392,72 @@ function LocalAnnotationDatabase.list(store, book_id, limit)
     return out
 end
 
+-- Cross-book recent annotations (all kinds), newest first. Used by the
+-- 我的页 "我的批注" list so users see highlights/thoughts of downloaded books
+-- without typing a query first.
+function LocalAnnotationDatabase.recent_all(store, limit)
+    limit = math.max(1, math.min(500, tonumber(limit) or 100))
+    -- Short TTL cache: repeated opens of 我的批注 return instantly. Every
+    -- mutator in this module plus the home manage flow invalidate the cache,
+    -- so rows are never stale after a local write; the TTL only bounds
+    -- staleness from writers this module cannot observe (external mirror
+    -- sync), and is deliberately short.
+    if recent_cache and recent_cache_limit == limit
+        and os.time() - (recent_cache_at or 0) < RECENT_CACHE_TTL then
+        local hit = {}
+        for i = 1, #recent_cache do hit[i] = recent_cache[i] end
+        return hit
+    end
+    local sql = [[SELECT ]] .. SELECT_COLUMNS .. [[
+        FROM local_annotations WHERE present = 1
+        ORDER BY updated_at DESC LIMIT ?]]
+    local out = {}
+    -- Fluency review: only scan the most recently touched annotation databases
+    -- instead of every book's SQLite file on the UI thread when the 我的批注
+    -- list opens. Files are capped by mtime; books without annotations are
+    -- skipped because their DB file does not exist.
+    local paths = database_paths(store)
+    local dated = {}
+    for _, path in ipairs(paths) do
+        local mtime = (lfs.attributes(path, "modification") or 0) or 0
+        dated[#dated + 1] = { path = path, mtime = tonumber(mtime) or 0 }
+    end
+    table.sort(dated, function(a, b) return a.mtime > b.mtime end)
+    if #dated > 12 then
+        local trimmed = {}
+        for i = 1, 12 do trimmed[i] = dated[i] end
+        dated = trimmed
+    end
+    for _, entry in ipairs(dated) do
+        local path = entry.path
+        local ok_conn, conn = pcall(SQLiteStore.open, path, true)
+        if ok_conn and conn then
+            local ok, err = xpcall(function()
+                local statement = conn:prepare(sql)
+                statement:bind(limit)
+                while true do
+                    local row = statement:step()
+                    if not row then break end
+                    out[#out + 1] = row_from_sql(row)
+                end
+                statement:close()
+            end, debug.traceback)
+            pcall(conn.close, conn)
+            if not ok then return nil, tostring(err) end
+        end
+    end
+    table.sort(out, function(a, b) return (tonumber(b.updated_at) or 0) < (tonumber(a.updated_at) or 0) end)
+    if #out > limit then
+        local trimmed = {}
+        for i = 1, limit do trimmed[i] = out[i] end
+        out = trimmed
+    end
+    recent_cache = out
+    recent_cache_limit = limit
+    recent_cache_at = os.time()
+    return out
+end
+
 function LocalAnnotationDatabase.pending(store, book_id, limit)
     if not LocalAnnotationDatabase.exists(store, book_id) then return {} end
     local conn = open(store, book_id, false)
@@ -379,6 +483,7 @@ function LocalAnnotationDatabase.pending(store, book_id, limit)
 end
 
 local function update_state(store, book_id, local_id, state, fields)
+    LocalAnnotationDatabase.invalidate_recent_cache()
     fields = fields or {}
     local conn = open(store, book_id, false)
     local ok, err = xpcall(function()
@@ -439,6 +544,7 @@ function LocalAnnotationDatabase.mark_state(store, book_id, local_id, state, fie
 end
 
 function LocalAnnotationDatabase.set_sync_kind(store, book_id, local_id, kind)
+    LocalAnnotationDatabase.invalidate_recent_cache()
     kind = tostring(kind or "")
     if kind ~= "" and kind ~= "bookmark" and kind ~= "highlight" and kind ~= "thought" then
         return nil, "invalid sync kind"
@@ -459,6 +565,7 @@ function LocalAnnotationDatabase.set_sync_kind(store, book_id, local_id, kind)
 end
 
 function LocalAnnotationDatabase.delete_row(store, book_id, local_id)
+    LocalAnnotationDatabase.invalidate_recent_cache()
     if not LocalAnnotationDatabase.exists(store, book_id) then return true end
     local conn = open(store, book_id, false)
     local ok, err = xpcall(function()
@@ -532,24 +639,6 @@ local FAILURE_STATES = {
     locate_failed=true, metadata_failed=true, coord_failed=true,
     unknown=true, delete_unknown=true,
 }
-
-local function database_paths(store)
-    local root = tostring(store and store.cache_books_dir or "")
-    local out = {}
-    if root == "" or lfs.attributes(root, "mode") ~= "directory" then return out end
-    local ok, iter, state, var = pcall(lfs.dir, root)
-    if not ok or not iter then return out end
-    while true do
-        local name = iter(state, var)
-        var = name
-        if not name then break end
-        if name ~= "." and name ~= ".." then
-            local path = root .. "/" .. name .. "/" .. LocalAnnotationDatabase.FILE_NAME
-            if lfs.attributes(path, "mode") == "file" then out[#out + 1] = path end
-        end
-    end
-    return out
-end
 
 -- Aggregate pending local mutations across every generated book. The home
 -- screen uses this instead of pretending there is a "current book" while no

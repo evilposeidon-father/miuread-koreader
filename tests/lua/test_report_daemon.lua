@@ -26,4 +26,52 @@ function T.test_delete_paths_tolerates_missing_files()
     B.eq(RD.delete_paths(paths), true, "missing files are safe to delete")
 end
 
+function T.test_read_json_roundtrip()
+    -- The headless harness decodes JSON with a Lua-style table parser
+    -- (loadstring("return "..text)), so fixtures use that dialect; the
+    -- device runtime parses the same files with rapidjson.
+    local path = os.tmpname()
+    local f = io.open(path, "w")
+    f:write('{a=1,b={true,false}}')
+    f:close()
+    local value = RD.read_json(path)
+    B.eq(value.a, 1)
+    B.eq(value.b[1], true)
+    B.eq(value.b[2], false)
+    os.remove(path)
+end
+
+function T.test_read_json_missing_or_invalid()
+    local path = os.tmpname()
+    os.remove(path)
+    B.eq(RD.read_json(path), nil, "missing file reads nil")
+    local f = io.open(path, "w")
+    f:write("not json {")
+    f:close()
+    B.eq(RD.read_json(path), nil, "invalid content reads nil")
+    os.remove(path)
+end
+
+function T.test_pid_alive_guards()
+    B.eq(RD.pid_alive(nil), false)
+    B.eq(RD.pid_alive(0), false)
+    B.eq(RD.pid_alive(1), false)
+    B.eq(RD.pid_alive("abc"), false)
+end
+
+function T.test_process_helpers_are_ffi_optional()
+    local pid = RD.current_pid()
+    B.ok(pid == nil or type(pid) == "number", "current_pid returns number or nil")
+    local alive = RD.pid_alive(999999)
+    B.ok(alive == nil or type(alive) == "boolean", "pid_alive returns tri-state")
+    RD.lower_priority() -- must not raise
+end
+
+function T.test_acquire_and_remove_lock()
+    local path = os.tmpname() .. ".miuread-lock"
+    os.remove(path)
+    B.eq(RD.acquire_lock(path), true)
+    RD.remove_lock(path) -- must not raise
+end
+
 return T

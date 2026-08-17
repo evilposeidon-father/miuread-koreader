@@ -105,6 +105,17 @@ local scalar = ExternalAnnotationParse.scalar
 local collect_records = ExternalAnnotationParse.collect_records
 local review_parts = ExternalAnnotationParse.review_parts
 local clean_book_keyword = ExternalAnnotationParse.clean_book_keyword
+local pick_search_match = ExternalAnnotationParse.pick_search_match
+
+-- Filename-derived search keywords for a local book: the cleaned name plus,
+-- for "书名-作者" style names, the bare title segment.
+local function title_candidates(path)
+    local keyword = clean_book_keyword(path)
+    local out = { keyword }
+    local base = tostring(keyword or ""):match("^(.-)[%s_%-]+[^%s_%-]+$")
+    if base and base ~= keyword and base ~= "" then out[#out + 1] = base end
+    return out
+end
 
 function M.install(Plugin)
     for name, method in pairs(M) do
@@ -171,6 +182,41 @@ function M:_external_auto_bind_miuread_book()
     return true
 end
 
+-- Auto-match an arbitrary local book to its WeRead counterpart using an exact
+-- normalized-title search. Never prompts and never binds a guess: ambiguous
+-- hits (several same-title editions) are skipped so the wrong edition's
+-- annotations can never be projected onto the local file. Throttled to once
+-- per file per reader session; failures are recorded so the diagnostics view
+-- can explain why a book has no cloud annotations.
+function M:_external_auto_match_local_book()
+    if type(self.logged_in) ~= "function" or not self:logged_in() then return false, "gate_closed" end
+    if type(self.is_online) ~= "function" or not self:is_online() then return false, "gate_closed" end
+    local path = current_file(self)
+    if not path then return false, "no_file" end
+    self._external_auto_match_tried = self._external_auto_match_tried or {}
+    if self._external_auto_match_tried[path] then return false, "already_tried" end
+    self._external_auto_match_tried[path] = true
+    for _, keyword in ipairs(title_candidates(path)) do
+        if keyword and keyword ~= "" then
+            local ok, result = pcall(self.api.search, self.api, keyword, 0, 20)
+            if not ok then
+                logger.warn("[MiuRead][ExternalAnnotations] auto match search failed:",
+                    "path=", tostring(path), "keyword=", tostring(keyword), tostring(result))
+                return false, "search_failed"
+            end
+            local book = pick_search_match(External.normalize_search(result), keyword)
+            if book then
+                logger.info("[MiuRead][ExternalAnnotations] auto matched local book",
+                    "path=", tostring(path), "book_id=", tostring(book.book_id or ""))
+                return self:_external_bind_book(path, book, nil, true)
+            end
+        end
+    end
+    logger.info("[MiuRead][ExternalAnnotations] no unambiguous auto match",
+        "path=", tostring(path), "tried=", tostring(#title_candidates(path)))
+    return false, "no_match"
+end
+
 function M:_setup_external_annotations()
     self:_teardown_external_annotations()
     if not is_supported(self)
@@ -207,6 +253,9 @@ function M:_setup_external_annotations()
         })
         self._external_annotation_touch_registered = true
     end
+    -- Annotation loading is progressive by design (微信读书风格)：the dynamic
+    -- hint fetches the current chapter (plus the next one) on open and keeps
+    -- following the reader; a full-book pull is intentionally not triggered.
     return true
 end
 
@@ -248,6 +297,30 @@ function M:_invalidate_external_annotations_layout()
     end
 end
 
+-- Frame-batched position warmup: after records are replaced or the layout
+-- resets, resolve missing pos_cache entries a few dozen per scheduled frame
+-- so the next paint pass never does 2N XPointer lookups synchronously
+-- (fluency review).
+function M:_schedule_overlay_warmup()
+    local overlay = self._external_annotation_overlay
+    if not overlay then return end
+    if self._overlay_warmup_task then
+        UIManager:unschedule(self._overlay_warmup_task)
+        self._overlay_warmup_task = nil
+    end
+    local function warm()
+        self._overlay_warmup_task = nil
+        local current = self._external_annotation_overlay
+        if not current then return end
+        if current:missingPositions(1) == 0 then return end
+        current:warmPositions(32)
+        if current:missingPositions(1) > 0 then
+            self._overlay_warmup_task = UIManager:scheduleIn(.06, warm)
+        end
+    end
+    self._overlay_warmup_task = UIManager:scheduleIn(.05, warm)
+end
+
 function M:onUpdatePos()
     self:_invalidate_external_annotations_layout()
 end
@@ -255,6 +328,7 @@ end
 function M:onDocumentRerendered()
     if self._external_annotation_overlay then
         self._external_annotation_overlay:resetLayout()
+        self:_schedule_overlay_warmup()
     end
 end
 
@@ -281,6 +355,26 @@ function M:_on_external_annotation_tap(ges)
     if not record then return false end
     self:_show_external_annotation_popup(record)
     return true
+end
+
+-- Show the external annotation (underline/thought) closest to the current
+-- reading position, using the overlay position cache for distance. Covers
+-- both the user's own and other readers' cloud annotations.
+function M:_show_nearest_external_annotation()
+    local overlay = self._external_annotation_overlay
+    local document = self.ui and self.ui.document
+    if not overlay or not overlay.enabled or not overlay.nearest
+        or not document or type(document.getCurrentPos) ~= "function" then
+        self:toast("暂无可用的云端批注", 2)
+        return false
+    end
+    local pos = tonumber(document:getCurrentPos())
+    local record = pos and overlay:nearest(pos)
+    if not record then
+        self:toast("暂无可用的云端批注", 2)
+        return false
+    end
+    return self:_show_external_annotation_popup(record)
 end
 
 function M:_show_external_annotation_popup(record)
@@ -326,24 +420,13 @@ function M:bind_external_annotations_book(touchmenu_instance)
     local path = current_file(self)
     if not path then return end
 
-    -- MiuRead downloaded books already know their WeRead book id; bind directly
-    -- instead of forcing the user to search a "书名-纯净版" style filename.
+    -- MiuRead downloaded books already know their WeRead book id; bind
+    -- directly and start a silent sync instead of asking.
     if self:_external_auto_bind_miuread_book() then
-        local entry = current_entry(self)
-        local title = entry and entry.binding and entry.binding.title or ""
         if touchmenu_instance and type(touchmenu_instance.updateItems) == "function" then
             touchmenu_instance:updateItems()
         end
-        UIManager:show(ConfirmBox:new{
-            title = "已自动匹配",
-            text = "已根据当前觅阅书籍自动匹配《" .. tostring(title ~= "" and title or "微信读书书籍")
-                .. "》。\n\n现在同步划线与想法吗？\n\n你可以随时取消；已下载的进度会自动保存，下次继续。",
-            ok_text = "同步划线与想法",
-            cancel_text = "稍后",
-            ok_callback = function()
-                self:sync_external_annotations()
-            end,
-        })
+        self:sync_external_annotations({silent = true})
         return
     end
 
@@ -397,10 +480,10 @@ function M:bind_external_annotations_book(touchmenu_instance)
     UIManager:show(dialog)
 end
 
-function M:_external_bind_book(path, book, touchmenu_instance)
+function M:_external_bind_book(path, book, touchmenu_instance, silent)
     if type(book) ~= "table" or tostring(book.book_id or "") == "" then
         self:info("匹配信息无效，请重新搜索。")
-        return
+        return false
     end
     local entry = self.external_annotations_db:getDocument(path) or {}
     entry.binding = {
@@ -416,7 +499,7 @@ function M:_external_bind_book(path, book, touchmenu_instance)
     local saved, save_err = self.external_annotations_db:saveDocument(path, entry)
     if not saved then
         self:info("保存匹配失败：" .. tostring(save_err or "未知错误"))
-        return
+        return false
     end
     local cleared, clear_err = self.external_annotations_db:clearSyncCheckpoint(path)
     if not cleared then
@@ -428,15 +511,10 @@ function M:_external_bind_book(path, book, touchmenu_instance)
     if touchmenu_instance and type(touchmenu_instance.updateItems) == "function" then
         touchmenu_instance:updateItems()
     end
-    UIManager:show(ConfirmBox:new{
-        title = "本地书已匹配",
-        text = "已匹配《" .. tostring(book.title ~= "" and book.title or book.book_id) .. "》。\n\n现在同步划线与想法吗？\n\n你可以随时取消；已下载的进度会自动保存，下次继续。",
-        ok_text = "同步划线与想法",
-        cancel_text = "稍后",
-        ok_callback = function()
-            self:sync_external_annotations()
-        end,
-    })
+    -- Binding never asks "sync now?": the pull starts silently so cloud
+    -- annotations appear on the next page turn, exactly like WeRead web.
+    self:sync_external_annotations({silent = true})
+    return true
 end
 
 function M:sync_external_annotations(options)
@@ -458,8 +536,10 @@ function M:sync_external_annotations(options)
     end
     local entry = current_entry(self)
     if not entry or not entry.binding then
-        -- MiuRead downloaded books are auto-bound from the known WeRead id.
-        if not self:_external_auto_bind_miuread_book() then
+        -- MiuRead books are auto-bound from the known WeRead id; arbitrary
+        -- local books are auto-matched by exact title. Never prompt here.
+        if not self:_external_auto_bind_miuread_book()
+            and not self:_external_auto_match_local_book() then
             if silent then
                 if on_done then on_done(false, "no_binding") end
             else
@@ -557,6 +637,26 @@ function M:_sync_external_annotations_start(options)
             finish_request()
             complete_signal(false, "interrupted")
             return
+        end
+        -- Fallback: the full per-chapter path failed midway, but personal
+        -- bookmarks/thoughts were already collected. Persist them as a
+        -- personal-only result so the catalog/API failure does not swallow
+        -- data the user can still use.
+        if request.personal_chapters and #request.personal_chapters > 0
+            and request.personal_saved ~= true then
+            local ok_p, records, stats = pcall(
+                External.locate, self.ui.document, request.personal_chapters)
+            if ok_p and type(records) == "table" then
+                request.entry.records = records
+                request.entry.stats = stats
+                request.entry.synced_at = os.time()
+                local saved, save_err = self.external_annotations_db:saveDocument(
+                    request.path, request.entry)
+                if saved then request.personal_saved = true end
+                logger.warn("[MiuRead][ExternalAnnotations] full sync failed, personal data saved",
+                    "error=", U.first_line(tostring(err), 160),
+                    "personal=", tostring(#records), "save_err=", tostring(save_err or ""))
+            end
         end
         finish_request()
         logger.warn("[MiuRead][ExternalAnnotations] sync interrupted:", tostring(err))
@@ -662,6 +762,27 @@ function M:_sync_external_annotations_start(options)
             error("已下载 " .. tostring(stats.total)
                 .. " 条划线，但都无法在本地书中匹配。已有数据未改动，请重试。")
         end
+        -- Merge the user's own bookmarks/thoughts into the full annotation
+        -- set (de-duplicated by record id), so personal-only data survives
+        -- alongside the cloud-wide underlines and thoughts.
+        if request.personal_chapters and #request.personal_chapters > 0 then
+            local ok_personal, personal_records, personal_stats = pcall(
+                External.locate, self.ui.document, request.personal_chapters)
+            if ok_personal and type(personal_records) == "table" then
+                local before = #records
+                records = ExternalAnnotationParse.merge_records_by_id(records, personal_records)
+                if type(personal_stats) == "table" then
+                    stats.total = stats.total + (tonumber(personal_stats.total) or 0)
+                    stats.located = stats.located + (tonumber(personal_stats.located) or 0)
+                    stats.unmatched = stats.unmatched + (tonumber(personal_stats.unmatched) or 0)
+                end
+                logger.info("[MiuRead][ExternalAnnotations] personal records merged:",
+                    "added=", tostring(#records - before))
+            else
+                logger.warn("[MiuRead][ExternalAnnotations] personal records locate failed",
+                    tostring(ok_personal and personal_records or personal_stats))
+            end
+        end
         request.entry.records = records
         request.entry.stats = stats
         request.entry.synced_at = os.time()
@@ -674,11 +795,13 @@ function M:_sync_external_annotations_start(options)
         local saved, save_err = self.external_annotations_db:saveDocument(
             request.path, request.entry)
         if not saved then error(save_err) end
+        request.personal_saved = true
         local cleared, clear_err = self.external_annotations_db:clearSyncCheckpoint(
             request.path)
         if not cleared then error(clear_err) end
         if self._external_annotation_overlay then
             self._external_annotation_overlay:setRecords(records)
+            self:_schedule_overlay_warmup()
         end
         UIManager:setDirty(self.dialog, "ui")
         finish_request()
@@ -833,7 +956,12 @@ function M:_sync_external_annotations_start(options)
         end
     end
 
-    local function run_personal_sync_if_any()
+    -- Collect the user's own bookmarks and thoughts into locate-ready
+    -- chapters (bookmark_list + review_list_mine). Returns the chapter list
+    -- or nil when there is no personal data. Does not locate or save: the
+    -- caller merges this into the full annotation sync (or falls back to a
+    -- personal-only sync when the full path is unavailable).
+    local function collect_personal_chapters()
         request.completed_count = 0
         request.total_chapters = 1
         report_progress("underlines", 0, { message = "正在读取个人划线与想法……" })
@@ -848,7 +976,7 @@ function M:_sync_external_annotations_start(options)
             self.api.review_list_mine, self.api, binding.book_id, 0, 200)
         if ok_reviews then review_rows = collect_records(value_reviews) end
 
-        if #bookmark_rows == 0 and #review_rows == 0 then return false end
+        if #bookmark_rows == 0 and #review_rows == 0 then return nil end
 
         local chapters, chapters_by_uid = {}, {}
         local seen_underline_keys = {}
@@ -938,10 +1066,16 @@ function M:_sync_external_annotations_start(options)
                 located_chapters[#located_chapters + 1] = chapter
             end
         end
-        if #located_chapters == 0 then return false end
+        if #located_chapters == 0 then return nil end
+        return located_chapters
+    end
 
+    -- Personal-only sync: locate and save the collected personal chapters
+    -- (bookmarks + own thoughts). Used as the fallback when the full
+    -- per-chapter cloud path is unavailable (empty catalog / API failure).
+    local function run_personal_sync_with(chapters)
         report_progress("package", 1, { message = "正在本地书中定位个人划线……" })
-        local records, stats = External.locate(self.ui.document, located_chapters)
+        local records, stats = External.locate(self.ui.document, chapters)
         if stats.total > 0 and stats.located == 0 then
             error("已读取 " .. tostring(stats.total)
                 .. " 条个人划线，但都无法在本地书中匹配。请确认本地文件与导入微信读书的文件一致。")
@@ -957,6 +1091,7 @@ function M:_sync_external_annotations_start(options)
         if not cleared then error(clear_err) end
         if self._external_annotation_overlay then
             self._external_annotation_overlay:setRecords(records)
+            self:_schedule_overlay_warmup()
         end
         UIManager:setDirty(self.dialog, "ui")
         finish_request()
@@ -971,10 +1106,21 @@ function M:_sync_external_annotations_start(options)
     end
 
     local function prepare_sync()
-        if run_personal_sync_if_any() then return end
+        -- Collect the user's own bookmarks/thoughts first; they are merged
+        -- into the full sync below (or used as a personal-only fallback when
+        -- the full per-chapter path is unavailable).
+        local personal_chapters = collect_personal_chapters()
         report_progress("catalog", 0, { message = "正在加载微信读书章节目录……" })
-        local catalog = load_catalog()
+        local ok_catalog, catalog = pcall(load_catalog)
+        if not ok_catalog then
+            if personal_chapters and #personal_chapters > 0 then
+                run_personal_sync_with(personal_chapters)
+                return
+            end
+            error(catalog)
+        end
         request.catalog = catalog
+        request.personal_chapters = personal_chapters
         request.total_chapters = #catalog
         local signature = catalog_signature(binding.book_id, catalog)
         local checkpoint = self.external_annotations_db:getSyncCheckpoint(path)
@@ -1093,7 +1239,10 @@ function M:sync_external_chapter(options)
     if not self:logged_in() then return false, "not_logged_in" end
     local entry = current_entry(self)
     if not entry or not entry.binding then
-        if not self:_external_auto_bind_miuread_book() then return false, "no_binding" end
+        if not self:_external_auto_bind_miuread_book()
+            and not self:_external_auto_match_local_book() then
+            return false, "no_binding"
+        end
         entry = current_entry(self)
     end
     if not entry or not entry.binding then return false, "no_binding" end
@@ -1232,6 +1381,7 @@ function M:_sync_external_chapter_start(request)
     if not document_saved then error(document_err) end
     if self._external_annotation_overlay then
         self._external_annotation_overlay:setRecords(request.entry.records)
+        self:_schedule_overlay_warmup()
     end
     UIManager:setDirty(self.dialog, "ui")
 
@@ -1265,9 +1415,11 @@ function M:_external_annotation_dynamic_hint()
     if not entry or not entry.binding then
         local now = os.time()
         if now < (tonumber(self._external_dynamic_skip_until) or 0) then return false end
-        if not self:_external_auto_bind_miuread_book() then
-            -- Arbitrary local books have no WeRead binding. Remember the miss
-            -- so page turns do not re-identify the file every few seconds.
+        if not self:_external_auto_bind_miuread_book()
+            and not self:_external_auto_match_local_book() then
+            -- No WeRead binding and no unambiguous auto match. Remember the
+            -- miss so page turns do not re-identify the file every few
+            -- seconds; the manual match entry stays available.
             self._external_dynamic_skip_until = now + 120
             return false
         end
@@ -1409,17 +1561,6 @@ function M:external_annotations_menu_items()
                 or "匹配微信读书书籍",
             callback = function(touchmenu_instance)
                 self:bind_external_annotations_book(touchmenu_instance)
-            end,
-        },
-        {
-            text = located and ("同步划线与想法 · 已匹配 " .. tostring(located))
-                or "同步划线与想法",
-            enabled_func = function()
-                return current_entry(self) ~= nil
-                    and current_entry(self).binding ~= nil
-            end,
-            callback = function()
-                self:sync_external_annotations()
             end,
         },
         {

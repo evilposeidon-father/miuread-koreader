@@ -376,7 +376,7 @@ function Thoughts.paginate(group, level)
 end
 
 local function panel_head_html(title)
-    return '<div class="miu-panel-head">' .. U.xml(title or "评论") .. '</div>'
+    return '<div class="miu-panel-head">' .. U.xml(title or "想法") .. '</div>'
 end
 
 local function source_box_html(text)
@@ -419,7 +419,7 @@ end
 function Thoughts.page_html(page, page_index, page_count, abstract)
     local rows = {}
     local has_source = tostring(abstract or "") ~= ""
-    rows[#rows + 1] = panel_head_html(has_source and "正文" or "评论")
+    rows[#rows + 1] = panel_head_html(has_source and "正文" or "想法")
     if has_source then
         rows[#rows + 1] = source_box_html(preview(abstract, 72))
     end
@@ -444,7 +444,7 @@ function Thoughts.popup_parts(group)
         fixed[#fixed + 1] = panel_head_html("正文")
         fixed[#fixed + 1] = source_box_html(source)
     else
-        body[#body + 1] = panel_head_html("评论")
+        body[#body + 1] = panel_head_html("想法")
     end
 
     local seen = {}

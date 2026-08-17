@@ -2,6 +2,7 @@ local Json = require("miuread.json")
 local U = require("miuread.util")
 local Adapter = require("miuread.read_report_adapter")
 local Config = require("miuread.config")
+local ReportDaemon = require("miuread.report_daemon")
 
 local Service = {}
 
@@ -16,50 +17,15 @@ local function sleep(seconds)
     os.execute("sleep " .. tostring(math.max(1, math.floor(seconds or 1))))
 end
 
-local function process_helpers()
-    local ok, ffi = pcall(require, "ffi")
-    if not ok then return nil end
-    pcall(function()
-        ffi.cdef[[
-            int getpid(void);
-            int setpriority(int which, int who, int prio);
-            int kill(int pid, int sig);
-        ]]
-    end)
-    return ffi
-end
-
-local ffi = process_helpers()
-
-local function lower_priority()
-    if not ffi then return end
-    pcall(function() ffi.C.setpriority(0, ffi.C.getpid(), 19) end)
-end
-
-local function own_pid()
-    if not ffi then return nil end
-    local ok, pid = pcall(function() return tonumber(ffi.C.getpid()) end)
-    return ok and pid or nil
-end
-
-local function remove_lock_dir(path)
-    if not path then return end
-    local ok, lfs = pcall(require, "lfs")
-    if ok and lfs and type(lfs.rmdir) == "function" then pcall(lfs.rmdir, path) end
-end
-
+-- Process liveness follows the original policy: an unknown parent (missing,
+-- invalid or unprobeable pid) is treated as alive so a healthy service is
+-- never stopped by a false negative.
 local function parent_alive(pid)
     pid = tonumber(pid)
-    if not pid or pid <= 1 or not ffi then return true end
-    local ok, result = pcall(function() return ffi.C.kill(pid, 0) end)
-    return not ok or result == 0
-end
-
-local function read_json(path)
-    local raw = U.read_file(path, true)
-    if not raw then return nil end
-    local ok, value = pcall(Json.decode, raw)
-    if ok and type(value) == "table" then return value end
+    if not pid or pid <= 1 then return true end
+    local alive = ReportDaemon.pid_alive(pid)
+    if alive == nil then return true end
+    return alive
 end
 
 local function write_status(path, value)
@@ -140,7 +106,7 @@ function Service.run(job)
     local parent_pid = tonumber(job.parent_pid)
     local poll_interval = math.max(0.5, tonumber(job.poll_interval) or 1)
 
-    lower_priority()
+    ReportDaemon.lower_priority()
 
     local generation = 0
     local sequence = 0
@@ -351,10 +317,10 @@ function Service.run(job)
     while true do
         if U.file_exists(stop_path) or not parent_alive(parent_pid) then break end
 
-        local control = read_json(control_path)
+        local control = ReportDaemon.read_json(control_path)
         if control and tonumber(control.generation or 0) ~= generation then
             local requested = tonumber(control.generation or 0) or 0
-            local loaded = read_json(job_path)
+            local loaded = ReportDaemon.read_json(job_path)
             if loaded and tonumber(loaded.generation or 0) == requested
                 and tostring(control.controller_token or "")==tostring(loaded.controller_token or "")
                 and tostring(control.login_session_id or "")==tostring(loaded.login_session_id or "")
@@ -493,10 +459,10 @@ function Service.run(job)
         service_version = tonumber(job.service_version) or 0,
     })
     if owner_path then
-        local owner = read_json(owner_path)
-        if not owner or tonumber(owner.pid) == own_pid() then os.remove(owner_path) end
+        local owner = ReportDaemon.read_json(owner_path)
+        if not owner or tonumber(owner.pid) == ReportDaemon.current_pid() then os.remove(owner_path) end
     end
-    remove_lock_dir(lock_path)
+    ReportDaemon.remove_lock(lock_path)
     return true
 end
 

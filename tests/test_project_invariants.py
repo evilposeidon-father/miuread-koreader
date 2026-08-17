@@ -266,6 +266,61 @@ class MainLuaStructureTests(unittest.TestCase):
             missing = sorted(used - declared)
             self.assertEqual([], missing, f"{name} uses modules without require: {missing}")
 
+
+    def test_home_cards_use_shared_skin_frame(self):
+        # R2 unification: the external cards must render through the same
+        # frame implementation as the reader dialogs. Reverting to Ui.frame
+        # recreates the dual visual baseline and is forbidden.
+        cards = read_text("miuread.koplugin/miuread/home_cards.lua")
+        self.assertIn("require(\"miuread.reader_skin\")", cards, "home_cards must require reader_skin")
+        self.assertIn("local fixed_frame = Skin.frame", cards, "home_cards must alias Skin.frame")
+        self.assertNotIn("local fixed_frame = Ui.frame", cards, "Ui.frame alias is forbidden in home_cards")
+        self.assertNotIn("UiScale.radius", cards, "home_cards must use Skin.radius")
+        self.assertNotIn("UiScale.line", cards, "home_cards must use Skin.line")
+        for name in ("action_sheet.lua", "full_shelf_view.lua", "home_view.lua", "home_quick_panel.lua", "local_browser_view.lua"):
+            text = read_text(f"miuread.koplugin/miuread/{name}")
+            self.assertNotIn("local fixed_frame = Ui.frame", text, f"{name} must use Skin.frame")
+            self.assertNotIn("UiScale.radius", text, f"{name} must use Skin.radius")
+            self.assertNotIn("UiScale.line", text, f"{name} must use Skin.line")
+        # Wrap-up: single week-boundary / duration source + annotation fallbacks.
+        home_data = read_text("miuread.koplugin/miuread/home_data.lua")
+        self.assertIn('require("miuread.read_time_ledger")', home_data,
+            "home_data must delegate duration/week to read_time_ledger")
+        reader = read_text("miuread.koplugin/miuread/plugin_reader.lua")
+        self.assertNotIn('"书页书签"', reader, "fallback label must come from annotation_kinds")
+        self.assertNotIn('"无文字内容"', reader, "fallback label must come from annotation_kinds")
+
+    def test_annotation_kinds_single_source_and_shared_filter(self):
+        # Architect wrap-up: UI controllers must require annotation_kinds (no
+        # re-declared kind literals at the display layer) and the chapter
+        # thoughts feature must route through the shared pure filter only.
+        for name in ("plugin_reader.lua", "plugin_home_content.lua"):
+            text = read_text(f"miuread.koplugin/miuread/{name}")
+            self.assertIn('require("miuread.annotation_kinds")', text,
+                f"{name} must require annotation_kinds for display labels")
+        self.assertIn('require("miuread.annotation_kinds")',
+            read_text("miuread.koplugin/main.lua"),
+            "main.lua must require annotation_kinds for display labels")
+        reader = read_text("miuread.koplugin/miuread/plugin_reader.lua")
+        self.assertIn("ExternalAnnotationParse.filter_records_by_chapter", reader,
+            "chapter thoughts must use the shared filter (single implementation)")
+        sync = read_text("miuread.koplugin/miuread/external_annotation_sync.lua")
+        self.assertNotIn("local function filter_records_by_chapter", sync,
+            "a second chapter filter implementation is forbidden")
+        ui_rows = read_text("miuread.koplugin/miuread/ui_rows.lua")
+        self.assertNotIn("TapBox", ui_rows, "ui_rows must stay a layout-only module")
+        self.assertNotIn("tappable", ui_rows, "ui_rows must stay a layout-only module")
+
+    def test_card_token_diff_pinned(self):
+        # R4: pin the card-token diff so it cannot drift before the device
+        # screenshot pass settles one value. hero card = radius(9,6,15) +
+        # max(line thin,1); Skin.paper default = radius(9,6,14) + thick.
+        cards = read_text("miuread.koplugin/miuread/home_cards.lua")
+        self.assertIn("radius = Skin.radius(9, 6, 15),", cards)
+        self.assertIn("bordersize = math.max(Skin.line(\"thin\"), 1),", cards)
+        skin = read_text("miuread.koplugin/miuread/reader_skin.lua")
+        self.assertIn("radius = options.radius or UiScale.radius(9, 6, 14),", skin)
+        self.assertIn("bordersize = options.bordersize or UiScale.line(\"thick\"),", skin)
     def test_new_downloads_use_single_clean_edition(self):
         # New downloads no longer offer a notes/clean version choice. Legacy
         # notes files stay readable and are only updated when they are the sole

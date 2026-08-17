@@ -28,14 +28,75 @@ local ReaderTypographyDialog = Lazy("miuread.reader_typography_dialog")
 local ReaderTocDialog = Lazy("miuread.reader_toc_dialog")
 local ReaderFrontlightDialog = Lazy("miuread.reader_frontlight_dialog")
 local ThoughtNativePopup = Lazy("miuread.thought_native_popup")
+local AnnotationKinds = require("miuread.annotation_kinds")
+local ReadTimeLedger = require("miuread.read_time_ledger")
+local HighlightPolicy = require("miuread.highlight_policy")
+local ExternalAnnotationParse = require("miuread.external_annotation_parse")
 local ScreenshotMode = Lazy("miuread.screenshot_mode")
 
 local _ = Text.tr
 
-local READER_QUICK_ACTION_ORDER={"search","back","cloud_annotations","local_upload","toggle_annotations","annotations","comments","edge_guard","toc","progress","font","spacing","page","sync"}
-local READER_QUICK_ACTION_DEFAULT={search=true,back=true,cloud_annotations=true,local_upload=true,toggle_annotations=true,annotations=true,comments=true,edge_guard=true,toc=false,progress=false,font=false,spacing=false,page=false,sync=false}
-local READER_QUICK_ACTION_LABELS={search="搜索",back="回到阅读",cloud_annotations="云端划线",local_upload="本地上传",toggle_annotations="显隐划线",annotations="批注",comments="评论",edge_guard="防误触",toc="目录",progress="进度",font="字体",spacing="行距",page="页面",sync="同步"}
+local READER_QUICK_ACTION_ORDER={"more","toc","progress","search","back","toggle_annotations","nearest_annotation","annotations","comments","edge_guard","font","spacing","page"}
+local READER_QUICK_ACTION_DEFAULT={more=true,toc=true,progress=true,search=true,back=true,toggle_annotations=true,nearest_annotation=false,annotations=true,comments=true,edge_guard=false,font=false,spacing=false,page=false}
+local READER_QUICK_ACTION_LABELS={more="更多",search="搜索",back="回到阅读",toggle_annotations="显隐划线",nearest_annotation="最近批注",annotations="批注",comments="想法",edge_guard="防误触",toc="目录",progress="进度",font="字体",spacing="行距",page="页面"}
 local READER_QUICK_ACTION_MAX=8
+
+-- Pure migration for quick-action preferences. Preserves the user's own
+-- order/visibility and only leads with "更多" (clamped to the slot budget);
+-- falls back to the current defaults only when the saved shape is invalid.
+-- Returns true when the reader table was rewritten.
+local function migrate_quick_actions(reader, order, default, max)
+    order = order or READER_QUICK_ACTION_ORDER
+    default = default or READER_QUICK_ACTION_DEFAULT
+    max = max or READER_QUICK_ACTION_MAX
+    if tonumber(reader.quick_actions_layout_version) == 3 then return false end
+    local actions = type(reader.quick_actions) == "table" and reader.quick_actions or nil
+    local list = type(reader.quick_action_order) == "table" and reader.quick_action_order or nil
+    local known = {}
+    for _, key in ipairs(order) do known[key] = true end
+    local valid = actions ~= nil and list ~= nil
+    if valid then
+        for _, key in ipairs(list) do
+            if known[key] ~= true or actions[key] ~= true then valid = false break end
+        end
+        for key, value in pairs(actions) do
+            if known[key] ~= true or (value ~= true and value ~= false) then valid = false break end
+        end
+    end
+    if not valid then
+        reader.quick_actions = U.copy(default)
+        reader.quick_action_order = {}
+        for _, key in ipairs(order) do
+            if default[key] == true then reader.quick_action_order[#reader.quick_action_order + 1] = key end
+        end
+    else
+        actions.more = true
+        local merged, seen = {"more"}, {more = true}
+        for _, key in ipairs(list) do
+            if key ~= "more" then
+                if actions[key] == true then merged[#merged + 1] = key end
+                seen[key] = true
+            end
+        end
+        for _, key in ipairs(order) do
+            if not seen[key] and actions[key] == true and #merged < max then
+                merged[#merged + 1] = key
+            end
+        end
+        -- Items beyond the slot budget become hidden, never lost.
+        for index = #merged, max + 1, -1 do
+            actions[merged[index]] = false
+            merged[index] = nil
+        end
+        for _, key in ipairs(order) do
+            if actions[key] == nil then actions[key] = default[key] == true end
+        end
+        reader.quick_actions = actions
+        reader.quick_action_order = merged
+    end
+    reader.quick_actions_layout_version = 3
+    return true
+end
 
 local ok_socket, socket = pcall(require, "socket")
 local function monotonic_wall_time()
@@ -79,8 +140,9 @@ function Plugin:_reader_preferences()
         changed=true
     end
 
-    local fixed_order={"toc","progress","search","back","font","spacing","page","comments","bookmark","highlight","thought","sync"}
-    local fixed_items={toc=true,progress=true,search=true,back=true,font=true,spacing=true,page=true,comments=true,bookmark=true,highlight=true,thought=true,sync=true}
+    if reader.selection_menu==nil then reader.selection_menu=false; changed=true end
+    local fixed_order={"toc","progress","search","back","font","spacing","page","comments","bookmark","highlight","thought"}
+    local fixed_items={toc=true,progress=true,search=true,back=true,font=true,spacing=true,page=true,comments=true,bookmark=true,highlight=true,thought=true}
     local order_ok=type(reader.quick_order)=="table" and #reader.quick_order==#fixed_order
     if order_ok then
         for index,key in ipairs(fixed_order) do
@@ -98,12 +160,17 @@ function Plugin:_reader_preferences()
         end
         if count~=#fixed_order then items_ok=false end
     end
-    if tonumber(reader.quick_layout_version)~=11 or not order_ok or not items_ok then
-        reader.quick_layout_version=11
+    if tonumber(reader.quick_layout_version)~=12 or not order_ok or not items_ok then
+        reader.quick_layout_version=12
         reader.quick_order=U.copy(fixed_order)
         reader.quick_items=U.copy(fixed_items)
         changed=true
     end
+
+    -- P2 alignment: the quick action row leads with the WeRead five groups
+    -- (更多/目录/进度 first, 字体/亮度 are dedicated rows below). The pure
+    -- migration preserves user order/visibility and only inserts 更多 first.
+    if migrate_quick_actions(reader) then changed = true end
 
     -- Reader quick-panel shortcut keys are stored as an ordered list of the
     -- currently visible keys. The full catalog and the default visible set are
@@ -181,11 +248,30 @@ function Plugin:_restore_miuread_highlight_action_policy()
     return true
 end
 
+-- Pure policy lives in miuread/highlight_policy; the Plugin method stays as
+-- a thin delegate so existing callers/tests keep working.
+function Plugin:highlight_selection_policy(selection_menu)
+    return HighlightPolicy.policy(selection_menu)
+end
+
+-- Safe preference read: book-open paths may run under stubs without a store;
+-- a missing preference simply means auto-underline (the default).
+function Plugin:_selection_menu_enabled()
+    local ok, reader = pcall(function() return self:_reader_preferences() end)
+    return ok and type(reader) == "table" and reader.selection_menu == true or false
+end
+
 function Plugin:_apply_miuread_highlight_action_policy()
     -- MiuRead books highlight on selection. KOReader only calls
     -- showHighlightPrompt automatically when default_highlight_action is
     -- "highlight"; with the factory "ask" default the selection menu is shown
     -- instead, so the direct-under-line wrapper below would never run.
+    if self:_selection_menu_enabled() then
+        -- B12 mitigation: keep KOReader's native selection menu (复制/查词/划线).
+        -- Undo any forced policy from a previous book with auto-underline.
+        self:_restore_miuread_highlight_action_policy()
+        return true
+    end
     local settings=G_reader_settings
     if not (settings and type(settings.readSetting)=="function"
         and type(settings.saveSetting)=="function") then return false end
@@ -211,7 +297,14 @@ function Plugin:_apply_miuread_highlight_defaults(book)
     local marker="miuread_highlight_underline_applied"
     local ok_has=pcall(settings.has,settings,marker)
     if not ok_has or not settings:has(marker) then
-        pcall(settings.saveSetting,settings,"highlight_drawer","underscore")
+        -- Default seed: respect the user-chosen global drawer style on the
+        -- first apply instead of hard-coding underscore (architect/backend
+        -- review: single writer for the seed; later applies keep the per-book
+        -- doc_settings value).
+        local ok_default, default_drawer = pcall(G_reader_settings.readSetting, G_reader_settings, "highlight_drawer")
+        local seed = ok_default and tostring(default_drawer or "") or ""
+        if not HighlightPolicy.is_style(seed) then seed = "underscore" end
+        pcall(settings.saveSetting,settings,"highlight_drawer",seed)
         pcall(settings.saveSetting,settings,marker,true)
     end
     local ok_read,saved=pcall(settings.readSetting,settings,"highlight_drawer")
@@ -220,7 +313,17 @@ function Plugin:_apply_miuread_highlight_defaults(book)
     if view.highlight.disabled~=false then view.highlight.disabled=false end
 
     local highlight=self.ui.highlight
-    if type(highlight.showHighlightPrompt)=="function" and highlight._miuread_force_direct_highlight~=true then
+    if self:_selection_menu_enabled() then
+        -- Native selection menu stays intact (copy/lookup/highlight prompt).
+        -- Restore any previously installed direct-save patch so toggling the
+        -- setting mid-reading takes effect immediately (architect review).
+        if highlight._miuread_force_direct_highlight==true and highlight._miuread_orig_show_highlight_prompt then
+            highlight.showHighlightPrompt=highlight._miuread_orig_show_highlight_prompt
+            highlight._miuread_force_direct_highlight=nil
+            highlight._miuread_orig_show_highlight_prompt=nil
+        end
+    elseif type(highlight.showHighlightPrompt)=="function" and highlight._miuread_force_direct_highlight~=true then
+        highlight._miuread_orig_show_highlight_prompt=highlight.showHighlightPrompt
         highlight.showHighlightPrompt=function(this,caller_callback)
             -- Always take the direct-save path. Passing `false` to KOReader's
             -- native implementation is not enough: `prompt = prompt or
@@ -235,9 +338,11 @@ function Plugin:_apply_miuread_highlight_defaults(book)
                 this:highlightFromHoldPos()
             end
             if not (this.selected_text and this.selected_text.pos0 and this.selected_text.pos1) then return end
+            if type(this.saveHighlight) ~= "function" then return end
             local index=this:saveHighlight(true)
             this:clear()
             if caller_callback then caller_callback(index) end
+            self:_maybe_show_selection_menu_hint()
         end
         highlight._miuread_force_direct_highlight=true
     end
@@ -529,8 +634,69 @@ function Plugin:reader_quick_panel_settings_menu()
             local reader,preferences=self:_reader_preferences(); reader.enabled=reader.enabled==false; self:_save_reader_preferences(reader,preferences)
         end},
         {text="快捷按键",post_text=string.format("已显示 %d/%d",self:_reader_quick_action_visible_count(),READER_QUICK_ACTION_MAX),sub_item_table_func=function() return self:reader_quick_actions_menu() end},
-        {text="阅读评论",post_text=self:_thoughts_enabled_label(),checked_func=function() return self:_thoughts_enabled() end,keep_menu_open=true,callback=function() self:_toggle_thoughts_enabled() end},
-        {text="评论显示设置",post_text=self:_thought_font_size_label(),sub_item_table_func=function() return self:thought_font_settings_menu() end},
+        {text="想法",post_text=self:_thoughts_enabled_label(),checked_func=function() return self:_thoughts_enabled() end,keep_menu_open=true,callback=function() self:_toggle_thoughts_enabled() end},
+        {text="想法显示设置",post_text=self:_thought_font_size_label(),sub_item_table_func=function() return self:thought_font_settings_menu() end},
+        {text="默认划线样式",post_text=function()
+            local ok, saved = pcall(G_reader_settings.readSetting, G_reader_settings, "highlight_drawer")
+            return HighlightPolicy.style_label(ok and saved or "underscore")
+        end,sub_item_table_func=function()
+            local rows={}
+            for _, style in ipairs(HighlightPolicy.STYLES) do
+                local target=style
+                rows[#rows+1]={text=HighlightPolicy.style_label(target),radio=true,checked_func=function()
+                    local ok,saved=pcall(G_reader_settings.readSetting,G_reader_settings,"highlight_drawer")
+                    return tostring(ok and saved or "underscore")==target
+                end,callback=function()
+                    if not HighlightPolicy.is_style(target) then return end
+                    -- Global seed for new books + per-book doc_settings as the
+                    -- single live writer; redraw existing highlights so the
+                    -- style change applies mid-reading (architect/backend review).
+                    pcall(G_reader_settings.saveSetting,G_reader_settings,"highlight_drawer",target)
+                    local ui=self.ui
+                    if ui and ui.doc_settings and type(ui.doc_settings.saveSetting)=="function" then
+                        pcall(ui.doc_settings.saveSetting,ui.doc_settings,"highlight_drawer",target)
+                    end
+                    if ui and ui.view and ui.view.highlight then
+                        ui.view.highlight.saved_drawer=target
+                        if type(ui.view.highlight.updateHighlightDrawer)=="function" then
+                            pcall(ui.view.highlight.updateHighlightDrawer,ui.view.highlight,target)
+                        end
+                    end
+                    -- Repaint the reading surface so the new style is visible on
+                    -- e-ink, but debounced and partial: cycling styles inside the
+                    -- open menu must not full-screen flash on every selection
+                    -- (fluency review). updateHighlightDrawer already applied the
+                    -- new drawer state; one "ui" repaint lands after the clicks
+                    -- settle, and the menu close repaints its covered area anyway.
+                    if self._style_repaint_task then
+                        UIManager:unschedule(self._style_repaint_task)
+                        self._style_repaint_task = nil
+                    end
+                    self._style_repaint_task = UIManager:scheduleIn(.25, function()
+                        self._style_repaint_task = nil
+                        if self.ui and self.ui.view then
+                            UIManager:setDirty(self.ui, "ui")
+                        end
+                    end)
+                end}
+            end
+            return rows
+        end},
+        {text="选词后显示选择菜单",post_text="复制 / 查词 / 划线",checked_func=function() return self:_reader_preferences().selection_menu==true end,keep_menu_open=true,callback=function()
+            local reader,preferences=self:_reader_preferences(); reader.selection_menu=not reader.selection_menu; self:_save_reader_preferences(reader,preferences)
+            -- Apply immediately so a toggle takes effect mid-reading, not only
+            -- on the next book open (backend review).
+            local highlight=self.ui and self.ui.highlight or nil
+            if highlight then highlight._miuread_force_direct_highlight=nil end
+            if self.ui and self.ui.document then
+                if reader.selection_menu then
+                    self:_restore_miuread_highlight_action_policy()
+                else
+                    pcall(function() self:_apply_miuread_highlight_defaults(self:_current_book_record()) end)
+                end
+            end
+            self:toast(reader.selection_menu and "已开启：选词显示复制/查词/划线菜单" or "已关闭：选词直接划线",2)
+        end},
     }
 end
 
@@ -1034,13 +1200,13 @@ function Plugin:_set_thoughts_enabled(enabled)
     local annotation_book=current and (record.annotation_requested==true or variant:find("notes",1,true))
     if enabled then
         if annotation_book then self:_setup_thought_tap() end
-        self:toast("阅读评论已开启",1.5)
+        self:toast("想法已开启",1.5)
     else
         self:_close_active_thought_popup("comments disabled")
         -- Keep the MiuRead internal-link guard installed. Hiding comments must
         -- not hand #miuthought links back to KOReader as invalid external links.
         if annotation_book then self:_setup_thought_tap() end
-        self:toast("阅读评论已关闭，划线和评论数据不会删除",2)
+        self:toast("想法已关闭，划线和想法数据不会删除",2)
     end
     return true
 end
@@ -1105,9 +1271,9 @@ function Plugin:_show_reader_comment_settings(back_callback)
         return "这是一段评论文字，用来预览当前字体、字号和实际阅读效果。"
     end
     ReaderTypographyDialog.show{
-        title="评论显示",
+        title="想法显示",
         subtitle=function()
-            if not self:_thoughts_enabled() then return "阅读评论已关闭 · 划线与评论数据仍保留" end
+            if not self:_thoughts_enabled() then return "想法已关闭 · 划线与想法数据仍保留" end
             local prefs=self.store:preferences().thoughts or {}
             return (prefs.follow_body_font==true and "字体跟随正文" or self:_thought_font_face_label(prefs)).." · 字号 "..self:_thought_font_size_label()
         end,
@@ -1117,7 +1283,7 @@ function Plugin:_show_reader_comment_settings(back_callback)
             local prefs=self.store:preferences().thoughts or {}
             local follow=prefs.follow_body_font==true
             return {
-                {kind="select",label="阅读评论",value=self:_thoughts_enabled_label(),value_bold=true,callback=function() self:_toggle_thoughts_enabled() end},
+                {kind="select",label="想法",value=self:_thoughts_enabled_label(),value_bold=true,callback=function() self:_toggle_thoughts_enabled() end},
                 {kind="select",label="评论字体",value=follow and ("跟随正文 · "..self:_reader_font_label()) or self:_thought_font_face_label(prefs),close=true,callback=function()
                     self:_show_reader_menu_table("评论字体",self:thought_font_face_menu(),return_to_comments)
                 end},
@@ -1141,7 +1307,7 @@ function Plugin:_show_reader_comment_settings(back_callback)
                     p.thoughts.font_size=22; p.thoughts.font=nil; p.thoughts.font_face=""; p.thoughts.follow_body_font=false
                     self:_save_ui_preferences(p,"thought_font_reset")
                     self:_refresh_thought_display(p.thoughts)
-                    self:toast("评论显示已恢复默认",1.5)
+                    self:toast("想法显示已恢复默认",1.5)
                 end},
                 {label="应用到全部评论",primary=true,callback=function()
                     -- 评论显示偏好本身就是觅阅全局偏好；这里显式保存并
@@ -1213,23 +1379,6 @@ function Plugin:_reader_wifi_summary()
     return "Wi-Fi!",true
 end
 
-function Plugin:_reader_sync_summary()
-    local label=tostring(self:progress_sync_label() or "")
-    if label:find("失败",1,true) or label:find("需要修复",1,true) or label:find("冲突",1,true) then
-        return label=="需要修复" and "同步需修复" or "同步失败",true
-    end
-    if label:find("正在",1,true) or label:find("上传中",1,true) or label:find("确认",1,true) then
-        return "同步中",false
-    end
-    if label:find("关闭",1,true) then return "同步关闭",false end
-    if label:find("未登录",1,true) then return "同步未登录",true end
-    if label:find("等待",1,true) or label:find("暂不处理",1,true) then return "同步待处理",false end
-    if label=="已同步" or label=="已上传并确认" or label=="已采用云端位置" or label=="使用本机位置" then
-        return "同步完成",false
-    end
-    return "同步已开启",false
-end
-
 function Plugin:_reader_battery_label()
     local state=HomeData.cached_device_state() or {}
     local value=tonumber(state.battery)
@@ -1247,17 +1396,26 @@ function Plugin:_reader_toolbar_header(title)
     elseif wifi_label=="Wi-Fi" then wifi_text="状态未知" end
     local battery=self:_reader_battery_label()
     local bluetooth_state=self:_bluetooth_state(false)
+    -- G3: today's reading time from the same ledger as the 我的页 card, so the
+    -- reader surface and the external UI share one duration source.
+    local duration_label=""
+    local saved_ledger=self.store:get("read_time_ledger")
+    if type(saved_ledger)=="table" then
+        local today=ReadTimeLedger.today(saved_ledger)
+        if today>0 then duration_label="今日 "..ReadTimeLedger.format_compact(today) end
+    end
     local device_ms=math.floor((os.clock()-device_started)*1000+.5)
 
     local state_started=os.clock()
-    local sync_text,sync_alert=self:_reader_sync_summary()
     local cache=self:_reader_toolbar_cache()
     local page,total=tonumber(cache.page),tonumber(cache.total)
     local chapter=U.trim(tostring(cache.chapter or ""))
     if chapter=="" then chapter="当前章节" end
     local progress_text=""
     if page and total and total>0 then
+        local remaining=math.max(0,math.floor(total+.5)-math.floor(page+.5))
         progress_text=tostring(math.floor(page+.5)).." / "..tostring(math.floor(total+.5))
+        if remaining>0 then progress_text=progress_text.." · 剩 "..tostring(remaining).." 页" end
     else
         local percent=self:_reader_toolbar_cached_percent()
         progress_text=percent and (tostring(math.floor(percent+.5)).."%") or "阅读进度"
@@ -1281,9 +1439,8 @@ function Plugin:_reader_toolbar_header(title)
         bluetooth_visible=bluetooth_state.supported==true,
         bluetooth_label=bluetooth_state.enabled==true and "蓝牙开" or "蓝牙关",
         bluetooth_callback=bluetooth_state.supported==true and function() return self:_bluetooth_toggle() end or nil,
-        sync_label=sync_text,sync_alert=sync_alert,
-        sync_callback=function() return self:_show_reader_sync_panel(function() self:show_reader_quick_panel() end) end,
         battery_label=battery,
+        duration_label=duration_label,
         more_label="更多",
         more_callback=function() return self:show_reader_control_center("reading") end,
         chapter_label=chapter,
@@ -1420,7 +1577,7 @@ end
 
 function Plugin:_show_reader_menu_table(title,source,back_callback)
     ReaderListDialog.show{
-        title=tostring(title or "阅读设置"),
+        title=tostring(title or "阅读界面设置"),
         items=function() return self:_reader_menu_rows_from_table(source,title,back_callback) end,
         page_size=tonumber(type(source)=="table" and source.max_per_page) or 6,
         on_back=back_callback or function() self:show_reader_quick_panel() end,
@@ -1450,8 +1607,21 @@ function Plugin:_reader_annotation_page(item)
     local xp=self:_reader_annotation_xpointer(item)
     local doc=self.ui and self.ui.document or nil
     if xp and doc and type(doc.getPageFromXPointer)=="function" then
+        -- Memoize per-book xpointer→page conversions: the records dialog
+        -- builds rows for every mirror/native row and would otherwise repeat
+        -- CREngine calls for the same positions (fluency review).
+        local book_id = self:_annotation_current_book_id()
+        local key = tostring(book_id or "") .. "|" .. xp
+        local memo = self._reader_page_memo
+        if memo and memo[key] ~= nil then
+            local hit = memo[key]
+            return hit or nil
+        end
         local ok,value=pcall(doc.getPageFromXPointer,doc,xp)
-        if ok and tonumber(value) then return math.floor(tonumber(value)+.5) end
+        local converted = ok and tonumber(value) and math.floor(tonumber(value)+.5) or nil
+        if not memo then memo = {}; self._reader_page_memo = memo end
+        memo[key] = converted or false
+        return converted
     end
     return nil
 end
@@ -1604,7 +1774,7 @@ function Plugin:_reader_annotation_excerpt(item,kind)
     elseif kind=="highlight" then text=item.text or item.notes
     else text=item.text end
     text=U.trim(tostring(text or ""):gsub("%s+"," "))
-    if text=="" and kind=="bookmark" then text="书页书签" end
+    if text=="" and kind=="bookmark" then text=AnnotationKinds.BOOKMARK_FALLBACK end
     text=U.utf8_truncate(text,120)
     return text
 end
@@ -1740,7 +1910,7 @@ function Plugin:_show_reader_annotation_actions(item,kind,anchor,refresh_callbac
     if type(item)~="table" then return false end
     kind=kind or self:_reader_annotation_type(item)
     local excerpt=self:_reader_annotation_excerpt(item,kind)
-    if excerpt=="" then excerpt=kind=="bookmark" and "书页书签" or "无文字内容" end
+    if excerpt=="" then excerpt=kind=="bookmark" and AnnotationKinds.BOOKMARK_FALLBACK or AnnotationKinds.TEXT_FALLBACK end
     local function refresh()
         if refresh_callback then refresh_callback() end
     end
@@ -1827,17 +1997,85 @@ function Plugin:_reader_record_rows(kind,back_callback)
     local annotations=(self.ui and self.ui.annotation and self.ui.annotation.annotations)
         or (self.ui and self.ui.bookmark and self.ui.bookmark.bookmarks) or {}
     local rows={}
+    local seen={}
+    -- Position-based dedupe: the mirror rows are snapshots of the same native
+    -- highlights (identical pos0), so without a shared key the list shows every
+    -- highlight twice (device feedback: 37 native + 37 mirrored = 19 pages).
+    local seen_pos={}
     for _,item in ipairs(type(annotations)=="table" and annotations or {}) do
+        local id=tostring(item.uuid or item.id or item.bookmarkId or "")
+        if id~="" then seen[id]=true end
+        local pos_key=tostring(item.pos0 or item.start or item.xpointer or "")
+        if pos_key~="" then seen_pos[pos_key]=true end
         if self:_reader_annotation_type(item)==kind then
             local page=self:_reader_annotation_page(item)
             local excerpt=self:_reader_annotation_excerpt(item,kind)
             local target=item
             rows[#rows+1]={
-                label=excerpt~="" and excerpt or (kind=="bookmark" and "书页书签" or "无文字内容"),
+                label=excerpt~="" and excerpt or (kind=="bookmark" and AnnotationKinds.BOOKMARK_FALLBACK or AnnotationKinds.TEXT_FALLBACK),
                 value=page and ("第 "..tostring(page).." 页") or "",
                 detail=tostring(item.datetime or item.date or ""),
                 inline_actions=function() return self:_reader_record_inline_actions(target,kind,back_callback) end,
             }
+        end
+    end
+    -- Merge the locally mirrored annotations (synced bookmarks/highlights and
+    -- thoughts). They live in the SQLite mirror, not in KOReader's native
+    -- annotation list, so they would otherwise never appear here.
+    local book_id=self:_annotation_current_book_id()
+    if book_id~="" then
+        local db_rows,err=LocalAnnotationDatabase.list(self.store,book_id,400)
+        if type(db_rows)=="table" then
+            for _,row in ipairs(db_rows) do
+                if tostring(row.kind or "")==kind then
+                    local local_id=tostring(row.local_id or "")
+                    local pos_key=tostring(row.pos0 or "")
+                    if pos_key~="" and seen_pos[pos_key] then
+                        -- Same native highlight already shown from KOReader's
+                        -- own list (which carries a live page); skip the mirror.
+                    else
+                    seen[local_id]=true
+                    if pos_key~="" then seen_pos[pos_key]=true end
+                    local page=tonumber(row.page)
+                    local excerpt=self:_reader_annotation_excerpt(row,kind)
+                    local row_target=row
+                    rows[#rows+1]={
+                        label=excerpt~="" and excerpt or (kind=="bookmark" and AnnotationKinds.BOOKMARK_FALLBACK or AnnotationKinds.TEXT_FALLBACK),
+                        value=page and ("第 "..tostring(page).." 页") or "",
+                        detail=tostring(row.datetime or row.updated_at or ""),
+                        inline_actions=function()
+                            local actions={{label="跳转正文",close=true,callback=function()
+                                local ui=self.ui
+                                if not ui then return end
+                                -- Mirror rows store local pos0 (snapshot of the
+                                -- native highlight); xpointer is usually empty or
+                                -- a WeRead server range. Resolve via the helper so
+                                -- local coordinates jump correctly.
+                                local xp=self:_reader_annotation_xpointer(row_target) or ""
+                                -- Cloud-only rows carry WeRead server coordinates that
+                                -- rarely resolve in the local EPUB. Pre-check before
+                                -- jumping so a failed GotoXPointer is not silent.
+                                local ok_pos=false
+                                if xp~="" and ui.document and type(ui.document.getPosFromXPointer)=="function" then
+                                    local ok,pos=pcall(ui.document.getPosFromXPointer,ui.document,xp)
+                                    ok_pos=ok and tonumber(pos)~=nil
+                                end
+                                if xp~="" and ok_pos and type(ui.handleEvent)=="function" then
+                                    ui:handleEvent(Event:new("GotoXPointer",xp))
+                                elseif page and type(ui.handleEvent)=="function" then
+                                    ui:handleEvent(Event:new("GotoPage",page))
+                                else
+                                    self:toast("该划线来自云端，本机暂未定位到对应位置",2.5)
+                                end
+                            end}}
+                            return actions
+                        end,
+                    }
+                end
+            end
+            end
+        else
+            logger.warn("[MiuRead][Records] local annotation mirror read failed",tostring(err or "unknown"))
         end
     end
     return rows
@@ -1859,9 +2097,7 @@ end
 
 function Plugin:_reader_annotation_summary_label()
     local counts=self:_reader_annotation_counts()
-    if (counts.total or 0)<=0 then return "暂无批注" end
-    return string.format("书签 %d · 划线 %d · 想法 %d",
-        tonumber(counts.bookmark or 0),tonumber(counts.highlight or 0),tonumber(counts.thought or 0))
+    return AnnotationKinds.summary(counts)
 end
 
 function Plugin:_enable_annotation_sync_and_sync_current()
@@ -1877,7 +2113,17 @@ function Plugin:_show_reader_annotation_panel(back_callback)
     if not (self.ui and self.ui.document) then return false end
     -- Refresh only the local mirror when the user explicitly opens this panel.
     -- No network/range work runs during a normal highlight gesture or page turn.
-    self:_capture_local_annotation_snapshot("annotation_panel")
+    -- The mirror upsert is deferred off the open path so the panel renders
+    -- immediately; mutation snapshots keep the mirror fresh meanwhile and
+    -- main.lua throttles repeated explicit refreshes (fluency review).
+    if self._annotation_panel_snapshot_task then
+        UIManager:unschedule(self._annotation_panel_snapshot_task)
+        self._annotation_panel_snapshot_task = nil
+    end
+    self._annotation_panel_snapshot_task = UIManager:scheduleIn(.15, function()
+        self._annotation_panel_snapshot_task = nil
+        self:_capture_local_annotation_snapshot("annotation_panel")
+    end)
     local current=(self.sync and self.sync:record()) or self:_current_book_record()
     local book_id=current and current.book and tostring(current.book.book_id or current.book.bookId or "") or ""
     local summary=book_id~="" and LocalAnnotationDatabase.summary(self.store,book_id) or nil
@@ -1903,9 +2149,9 @@ function Plugin:_show_reader_annotation_panel(back_callback)
         sections=function()
             return {
                 {title="本书批注",rows={
-                    {icon="bookmark",label="书签",value=tostring(visible_counts.bookmark or 0),callback=function() self:_show_reader_records("bookmark",return_to_panel) end},
-                    {icon="highlight",label="划线",value=tostring(visible_counts.highlight or 0),callback=function() self:_show_reader_records("highlight",return_to_panel) end},
-                    {icon="thought",label="想法",value=tostring(visible_counts.thought or 0),callback=function() self:_show_reader_records("thought",return_to_panel) end},
+                    {icon="bookmark",label=AnnotationKinds.label("bookmark"),value=tostring(visible_counts.bookmark or 0),callback=function() self:_show_reader_records("bookmark",return_to_panel) end},
+                    {icon="highlight",label=AnnotationKinds.label("highlight"),value=tostring(visible_counts.highlight or 0),callback=function() self:_show_reader_records("highlight",return_to_panel) end},
+                    {icon="thought",label=AnnotationKinds.label("thought"),value=tostring(visible_counts.thought or 0),callback=function() self:_show_reader_records("thought",return_to_panel) end},
                     {icon="search",label="搜索全部批注",value="划线 想法 书签",callback=function() self:show_annotation_search_dialog(return_to_panel) end},
                 }},
                 self:annotation_sync_diagnostic_only() and {title="批注坐标诊断",rows={
@@ -1915,25 +2161,7 @@ function Plugin:_show_reader_annotation_panel(back_callback)
                     end},
                     {label="诊断内容",value="含已同步与待同步本地批注",enabled=false},
                     {label="文件位置",value="books/<bookId>/annotation-coordinate-diagnostics",enabled=false},
-                }} or {title="微信读书同步 · 手动",rows={
-                    {icon="upload",label="立即同步本书批注",value="上传 删除 云端对账",value_bold=true,callback=function()
-                        self:sync_local_annotations_now()
-                    end},
-                    {icon="sync",label="待处理",value=pending_work>0
-                        and string.format("共 %d · 上传重试 %d · 删除 %d",pending_work,pending_upload,pending_delete)
-                        or "0 · 仍可手动对账",enabled=false},
-                    {label="同步详情",value=legacy_synced>0
-                        and string.format("已同步 %d · 旧坐标 %d",tonumber(summary.synced or 0) or 0,legacy_synced)
-                        or string.format("已同步 %d · 失败 %d",tonumber(summary.synced or 0) or 0,failed),
-                        callback=function() self:show_local_annotation_sync_status() end},
-                    {label="自动上传",value="暂未开启 · 先完成真机验证",enabled=false},
-                    {icon="diagnostics",label="坐标诊断",value="导出 raw / coord / range",callback=function()
-                        self:sync_local_annotations_now(true)
-                    end},
-                    {label="新想法可见范围",value=self:annotation_sync_visibility_label(),callback=function()
-                        self:_show_reader_menu_table("新想法可见范围",self:annotation_sync_visibility_menu(),return_to_panel)
-                    end},
-                }},
+                }} or nil,
             }
         end,
     }
@@ -1941,16 +2169,16 @@ function Plugin:_show_reader_annotation_panel(back_callback)
 end
 
 function Plugin:_show_reader_records(initial_kind,back_callback)
-    local labels={bookmark="书签",highlight="划线",thought="想法"}
+    local labels=AnnotationKinds.LABELS
     ReaderListDialog.show{
         title="阅读记录",
         subtitle="点击记录展开操作 · 跳转、修改与删除都在当前列表完成",
         initial_category=labels[initial_kind] and initial_kind or "bookmark",
         categories=function()
             return {
-                {key="bookmark",label="书签",items=self:_reader_record_rows("bookmark",back_callback),empty_text="当前书籍还没有书签"},
-                {key="highlight",label="划线",items=self:_reader_record_rows("highlight",back_callback),empty_text="当前书籍还没有划线"},
-                {key="thought",label="想法",items=self:_reader_record_rows("thought",back_callback),empty_text="当前书籍还没有自己的想法"},
+                {key="bookmark",label=labels.bookmark,items=self:_reader_record_rows("bookmark",back_callback),empty_text="当前书籍还没有" .. labels.bookmark},
+                {key="highlight",label=labels.highlight,items=self:_reader_record_rows("highlight",back_callback),empty_text="当前书籍还没有" .. labels.highlight},
+                {key="thought",label=labels.thought,items=self:_reader_record_rows("thought",back_callback),empty_text="当前书籍还没有自己的想法"},
             }
         end,
         page_size=4,
@@ -1962,6 +2190,83 @@ end
 
 function Plugin:_reader_show_bookmarks(back_callback)
     return self:_show_reader_records("bookmark",back_callback)
+end
+
+-- G6 (B10): 章末想法聚合——当前章已同步的划线与想法，按章内位置排序。
+-- 只聚合已拉取数据；空态按语义分流（未同步 vs 无想法）。
+function Plugin:_show_reader_chapter_thoughts(back_callback)
+    if not (self.ui and self.ui.document) then return false end
+    local position
+    if self.sync and type(self.sync.local_position) == "function" then
+        position = self.sync:local_position()
+    end
+    local uid = tostring(position and position.chapter_uid or "")
+    local chapter_idx = tonumber(position and position.chapter_idx)
+    local path = self:_current_document_path()
+    local records = {}
+    if self.external_annotations_db and path then
+        local entry = self.external_annotations_db:getDocument(path) or {}
+        records = type(entry.records) == "table" and entry.records or {}
+    end
+    -- 本机镜像合入（架构师 R5）：镜像行的 chapter_uid 可为空串，按
+    -- chapter_idx 兜底纳入同章记录；filter 负责 uid 精确/idx 兜底与排序。
+    local current = self.sync and self.sync:record() or self:_current_book_record()
+    local book_id = current and current.book and tostring(current.book.book_id or current.book.bookId or "") or ""
+    if book_id ~= "" and LocalAnnotationDatabase then
+        local mirror, merr = LocalAnnotationDatabase.list(self.store, book_id, 200)
+        if type(mirror) == "table" then
+            for _, row in ipairs(mirror) do
+                local kind = tostring(row.kind or "")
+                if kind == "thought" or kind == "highlight" then
+                    local selected = U.trim(tostring(row.selected_text or row.text or ""))
+                    local note = U.trim(tostring(row.note or ""))
+                    local items = {}
+                    if kind == "thought" then
+                        items[#items + 1] = { text = note ~= "" and note or selected }
+                    end
+                    records[#records + 1] = {
+                        chapter_uid = tostring(row.chapter_uid or ""),
+                        chapter_idx = tonumber(row.chapter_idx),
+                        pos0 = tostring(row.pos0 or ""),
+                        range = tostring(row.range_key or row.local_id or ""),
+                        text = selected,
+                        items = items,
+                        mirror = true,
+                    }
+                end
+            end
+        else
+            logger.warn("[MiuRead][ChapterThoughts] mirror read failed", tostring(merr or "unknown"))
+        end
+    end
+    local filtered = ExternalAnnotationParse.filter_records_by_chapter(records, uid, chapter_idx)
+    local rows = {}
+    for _, record in ipairs(filtered) do
+        local text = U.utf8_truncate(U.trim(tostring(record.text or "")), 48, "…")
+        local item_count = type(record.items) == "table" and #record.items or 0
+        local target = record
+        rows[#rows + 1] = {
+            icon = item_count > 0 and "thought" or "highlight",
+            label = text ~= "" and text or "（无文字）",
+            detail = item_count > 0 and ("想法 " .. tostring(item_count) .. " · 划线") or "划线",
+            callback = function()
+                local xp = tostring(target.pos0 or "")
+                if xp ~= "" and type(self.ui.handleEvent) == "function" then
+                    self.ui:handleEvent(Event:new("GotoXPointer", xp))
+                end
+            end,
+        }
+    end
+    local empty_text = uid == "" and "无法定位当前章节"
+        or (#records == 0 and "本章尚未同步想法，随阅读进度自动拉取" or "本章暂无想法")
+    ReaderListDialog.show{
+        title="本章想法",
+        subtitle=uid ~= "" and ("已同步 " .. tostring(#filtered) .. " 条 · 点击跳转") or "无法定位当前章节",
+        items=rows, page_size=5, empty_text=empty_text,
+        on_back=back_callback or function() self:show_reader_control_center("reading") end,
+        on_home=self:_home_enabled() and function() return self:return_to_miuread_home("reader surface") end or nil,
+    }
+    return true
 end
 
 function Plugin:_reader_search_results(query,results,back_callback)
@@ -2155,66 +2460,6 @@ function Plugin:_show_reader_font_panel(back_callback)
             return {
                 {label="恢复当前书籍",callback=function() self:_reader_restore_typography_defaults() end},
                 {label="设为全部书籍默认",primary=true,callback=function() self:_reader_apply_typography_defaults() end},
-            }
-        end,
-    }
-    return true
-end
-
-function Plugin:_show_reader_sync_diagnostics_panel(back_callback)
-    local diagnostics=self:sync_diagnostics_menu()
-    local current=self.sync and self.sync:record() or nil
-    local logged_in=self.auth and type(self.auth.is_logged_in)=="function" and self.auth:is_logged_in() or nil
-    ReaderSettingsDialog.show{
-        title="同步诊断",
-        subtitle="所有检查都在觅阅页面内完成",
-        on_back=back_callback or function() self:_show_reader_sync_panel() end,
-        on_home=function() return self:return_to_miuread_home("reader surface") end,
-        sections=function()
-            local state=tostring(self:progress_sync_label() or "")
-            return {
-                {title="当前状态",rows={
-                    {label="当前书籍识别",value=current and current.book and "正常" or "未识别",callback=diagnostics[1] and diagnostics[1].callback},
-                    {label="登录状态",value=logged_in==false and "未登录" or "检查",callback=diagnostics[2] and diagnostics[2].callback},
-                    {label="云端进度读取",value=state~="" and state or "检查",callback=diagnostics[3] and diagnostics[3].callback},
-                    {label="当前进度上传",value="测试",callback=diagnostics[4] and diagnostics[4].callback},
-                    {label="阅读时间上传",value="测试 30 秒",callback=diagnostics[5] and diagnostics[5].callback},
-                }},
-                {title="恢复",rows={
-                    {label="重置当前书籍同步状态",value="不删除书籍与阅读数据",callback=diagnostics[7] and diagnostics[7].callback},
-                }},
-            }
-        end,
-    }
-    return true
-end
-
-function Plugin:_show_reader_sync_panel(back_callback)
-    local return_to_sync=function() self:_show_reader_sync_panel(back_callback) end
-    ReaderSettingsDialog.show{
-        title="阅读同步",
-        subtitle=function() return "当前状态："..tostring(self:progress_sync_label()) end,
-        on_back=back_callback or function() self:show_reader_quick_panel() end,
-        on_home=function() return self:return_to_miuread_home("reader surface") end,
-        sections=function()
-            local sync=self.store:preferences().sync or {}
-            return {
-                {title="当前状态",rows={
-                    {label="同步状态",value=self:progress_sync_label(),value_bold=true,arrow=false},
-                }},
-                {title="立即操作",rows={
-                    {icon="sync",label="静默同步全部",value=self:_sync_scheduler_status_label(),callback=function() self:_sync_shortcut() end},
-                    {icon="upload",label="上传当前进度",value="执行",callback=function() self:upload_local_progress(true) end},
-                    {icon="download",label="读取云端进度",value="执行",callback=function() self:manual_sync() end},
-                }},
-                {title="自动同步",rows={
-                    {label="阅读进度",value=sync.progress_enabled~=false and "已开启" or "已关闭",value_bold=true,keep_open=true,callback=function() self:toggle_progress_sync() end},
-                    {label="阅读时间",value=sync.time_enabled==true and "已开启" or "已关闭",value_bold=true,keep_open=true,callback=function() self:toggle_time_sync() end},
-                    {label="成功提醒",value=self:_sync_success_notice_enabled() and "已开启" or "已关闭",value_bold=true,keep_open=true,callback=function() self:toggle_sync_success_notice() end},
-                }},
-                {title="诊断",rows={
-                    {icon="diagnostics",label="同步诊断",value="查看详情",callback=function() self:_show_reader_sync_diagnostics_panel(return_to_sync) end},
-                }},
             }
         end,
     }
@@ -2906,22 +3151,6 @@ function Plugin:_show_reader_wifi_quick_panel(back_callback)
     return true
 end
 
-function Plugin:_show_reader_sync_quick_panel(back_callback)
-    ReaderSettingsDialog.show{
-        title="阅读同步",
-        subtitle=function() return "当前状态: "..tostring(self:progress_sync_label()) end,
-        on_back=back_callback or function() self:show_reader_quick_panel() end,
-        on_home=function() return self:return_to_miuread_home("reader surface") end,
-        rows=function()
-            return {
-                {label="立即同步",value="上传当前进度",value_bold=true,keep_open=true,callback=function() self:upload_local_progress(true) end},
-                {label="同步详情",value=self:progress_sync_label(),callback=function() self:_show_reader_sync_panel(back_callback or function() self:show_reader_quick_panel() end) end},
-            }
-        end,
-    }
-    return true
-end
-
 function Plugin:_show_reader_gesture_panel(back_callback)
     ReaderSettingsDialog.show{
         title="手势与按键",
@@ -2933,7 +3162,7 @@ function Plugin:_show_reader_gesture_panel(back_callback)
                 {label="顶部下滑",value="觅阅阅读快捷面板",arrow=false},
                 {label="向上滑动",value="收起快捷面板",arrow=false},
                 {label="正文区域",value="保持翻页与选词手势",arrow=false},
-                {label="阅读评论",value=self:_thoughts_enabled_label(),keep_open=true,callback=function() self:_toggle_thoughts_enabled() end},
+                {label="想法",value=self:_thoughts_enabled_label(),keep_open=true,callback=function() self:_toggle_thoughts_enabled() end},
             }
         end,
     }
@@ -2969,7 +3198,8 @@ function Plugin:_reader_control_categories()
             {icon="search",label="书内搜索",value="搜索当前书籍",callback=function() self:_reader_show_search(back_to("reading")) end},
             {icon="undo",label="回到阅读处",value="返回跳转前位置",callback=function() self:_reader_go_back_location() end},
             {icon="highlight",label="批注",value=self:_reader_annotation_summary_label(),callback=function() self:_show_reader_annotation_panel(back_to("reading")) end},
-            {icon="comment",label="评论",value=self:_thoughts_enabled_label(),value_bold=true,callback=function() self:_show_reader_comment_settings(back_to("reading")) end},
+            {icon="comment",label="想法",value=self:_thoughts_enabled_label(),value_bold=true,callback=function() self:_show_reader_comment_settings(back_to("reading")) end},
+            {icon="thought",label="本章想法",value="划线与想法",callback=function() self:_show_reader_chapter_thoughts(back_to("reading")) end},
         }}}},
         {key="typeset",label="排版",sections={{items={
             {icon="font",label="字体与字号",value=self:_reader_font_label().." · "..self:_reader_font_size_label(),callback=function() self:_show_reader_font_panel(back_to("typeset")) end},
@@ -2979,7 +3209,6 @@ function Plugin:_reader_control_categories()
         }}}},
         {key="book",label="书籍",sections={{items={
             {icon="current-book",label="当前书籍",value="信息与本地状态",callback=function() self:_show_reader_current_book_panel(back_to("book")) end},
-            {icon="sync",label="阅读同步",value=self:progress_sync_label(),value_bold=true,callback=function() self:_show_reader_sync_panel(back_to("book")) end},
             {icon="download",label="下载与生成",value="任务、失败重试与重新生成",callback=function() self:show_downloads(back_to("book")) end},
             {icon="comment",label="评论数据",value="迁移与显示设置",callback=function()
                 self:_show_reader_menu_table("评论数据",self:book_repair_settings_menu(),back_to("book"))
@@ -2993,6 +3222,7 @@ function Plugin:_reader_control_categories()
             {icon="screenshot",label="截图",value="截取当前屏幕",callback=function() ScreenshotMode.start(self) end},
             {icon="full-refresh",label="全屏刷新",value="清除残影",callback=function() self:_home_full_refresh() end},
             {icon="sleep",label="休眠",value="立即休眠",enabled=Device:canSuspend(),callback=function() self:_home_sleep() end},
+            {icon="settings",label="阅读界面设置",value="评论与快捷控制",callback=function() self:_show_reader_menu_table("阅读界面",self:reader_quick_panel_settings_menu(),back_to("device")) end},
             {icon="tools",label="手势与按键",value="阅读手势说明",callback=function() self:_show_reader_gesture_panel(back_to("device")) end},
             {icon="settings",label="系统与兼容",value="高级与故障排查",callback=function() self:_show_reader_device_compat_panel(back_to("device")) end},
         }}}},
@@ -3054,6 +3284,7 @@ end
 function Plugin:_reader_quick_definitions()
     local edge_enabled=self:_reader_edge_guard_state()
     return {
+        more={key="more",icon="menu",label="更多",callback=function() self:show_reader_more_panel() end},
         toc={key="toc",icon="toc",label="目录",callback=function() self:_show_reader_toc(function() self:show_reader_quick_panel() end) end},
         progress={key="progress",icon="progress",label="进度",callback=function() self:_show_reader_progress_control(function() self:show_reader_quick_panel() end) end},
         search={key="search",icon="search",label="搜索",icon_scale=.94,callback=function() self:_reader_show_search(function() self:show_reader_quick_panel() end) end},
@@ -3061,27 +3292,23 @@ function Plugin:_reader_quick_definitions()
         font={key="font",icon="font",label="字体",callback=function() self:_show_reader_font_panel(function() self:show_reader_quick_panel() end) end},
         spacing={key="spacing",icon="line-spacing",label="行距",callback=function() self:_show_reader_spacing_panel(function() self:show_reader_quick_panel() end) end},
         page={key="page",icon="display",label="页面",callback=function() self:_show_reader_page_panel(function() self:show_reader_quick_panel() end) end},
-        comments={key="comments",icon="comment",label="评论",icon_scale=1.16,icon_nudge_y=-1,active=self:_thoughts_enabled(),callback=function()
+        comments={key="comments",icon="comment",label="想法",icon_scale=1.16,icon_nudge_y=-1,active=self:_thoughts_enabled(),callback=function()
             self:_show_reader_comment_settings(function() self:show_reader_quick_panel() end)
         end,hold_callback=function()
             self:_toggle_thoughts_enabled()
             UIManager:scheduleIn(.05,function() self:show_reader_quick_panel() end)
         end},
         annotations={key="annotations",icon="highlight",label="批注",icon_scale=1.28,icon_nudge_y=-2,callback=function() self:_show_reader_annotation_panel(function() self:show_reader_quick_panel() end) end},
-        cloud_annotations={key="cloud_annotations",icon="sync",label="云端划线",icon_scale=1.04,active=self:_external_annotations_visible(),callback=function()
-            self:sync_external_annotations()
-        end},
-        local_upload={key="local_upload",icon="upload",label="本地上传",icon_scale=1.04,callback=function()
-            self:sync_local_annotations_now(false)
-        end},
         toggle_annotations={key="toggle_annotations",icon="highlight",label="显隐划线",icon_scale=1.12,active=self:_external_annotations_visible(),callback=function()
             self:toggle_external_annotations()
             UIManager:scheduleIn(.05,function() self:show_reader_quick_panel() end)
         end},
+        nearest_annotation={key="nearest_annotation",icon="locate",label="最近批注",icon_scale=1.04,active=self:_external_annotations_visible(),callback=function()
+            self:_show_nearest_external_annotation()
+        end},
         edge_guard={key="edge_guard",icon=edge_enabled and "edge-guard" or "edge-guard-off",label="防误触",icon_scale=1.02,active=edge_enabled,callback=function()
             self:_show_reader_edge_guard_panel(function() self:show_reader_quick_panel() end)
         end},
-        sync={key="sync",icon="sync",label="静默同步",callback=function() self:_sync_shortcut() end},
     }
 end
 
@@ -3203,6 +3430,18 @@ function Plugin:_schedule_reader_toolbar_prewarm(_session,_delay)
     return false
 end
 
+function Plugin:_maybe_show_selection_menu_hint()
+    if self:_selection_menu_enabled() then return end
+    -- Safe read: this runs inside the direct-highlight wrapper, which tests
+    -- drive with a stub plugin that has no store.
+    local ok, reader, preferences = pcall(function() return self:_reader_preferences() end)
+    if not ok or type(reader) ~= "table" then return end
+    if reader.selection_menu_hint_shown == true then return end
+    reader.selection_menu_hint_shown = true
+    self:_save_reader_preferences(reader, preferences)
+    self:toast("选词直接划线；如需复制/查词，可在 阅读界面设置 开启「选词后显示选择菜单」", 4)
+end
+
 function Plugin:_maybe_show_reader_quick_panel_hint()
     if self._reader_quick_panel_hint_shown==true then return false end
     self._reader_quick_panel_hint_shown=true
@@ -3293,5 +3532,22 @@ function M.install(target)
 end
 
 M.QUICK_ACTION_MAX = READER_QUICK_ACTION_MAX
+
+M.migrate_quick_actions = migrate_quick_actions
+M.highlight_selection_policy = HighlightPolicy.policy
+M.STYLES = HighlightPolicy.STYLES
+M.style_label = HighlightPolicy.style_label
+M.is_style = HighlightPolicy.is_style
+
+-- Pure: the default visible quick-action order (WeRead five groups lead).
+M.QUICK_DEFAULT_VISIBLE = function()
+    local order = {}
+    for _, key in ipairs(READER_QUICK_ACTION_ORDER) do
+        if READER_QUICK_ACTION_DEFAULT[key] == true then
+            order[#order + 1] = key
+        end
+    end
+    return order
+end
 
 return M

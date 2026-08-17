@@ -48,8 +48,32 @@ function Plugin:_toggle_home_lockscreen(confirmed)
     self:_refresh_home_view(home.lockscreen_recent and "主页锁屏将显示最近阅读封面" or "已恢复 KOReader 原锁屏设置","header")
 end
 
+local HOME_SHELF_SORT_LABELS={recent="最近阅读",added="最近加入",title="按书名",author="按作者"}
+
+function Plugin:home_shelf_sort_menu()
+    local rows={}
+    for _,key in ipairs({"recent","added","title","author"}) do
+        local sort_key=key
+        rows[#rows+1]={
+            text=HOME_SHELF_SORT_LABELS[sort_key],
+            checked_func=function() return (self:_home_preferences().shelf_sort or "recent")==sort_key end,
+            callback=function() self:_set_home_shelf_sort(sort_key) end,
+        }
+    end
+    return rows
+end
+
+function Plugin:_set_home_shelf_sort(sort)
+    if sort~="recent" and sort~="added" and sort~="title" and sort~="author" then sort="recent" end
+    local home,preferences=self:_home_preferences()
+    home.shelf_sort=sort
+    self:_save_home_preferences(home,preferences)
+    self:_refresh_home_view("书架排序：已切换到"..(HOME_SHELF_SORT_LABELS[sort] or "最近阅读"),"full")
+end
+
 function Plugin:home_layout_settings_menu()
     local home=self:_home_preferences()
+    local sort_label=HOME_SHELF_SORT_LABELS[home.shelf_sort or "recent"] or "最近阅读"
     return {
         {text="标准布局",post_text="继续阅读与分类书架",checked_func=function() return home.layout_style~="compact" end,callback=function()
             self:_set_home_layout("desk")
@@ -57,6 +81,7 @@ function Plugin:home_layout_settings_menu()
         {text="紧凑布局",post_text="缩小内容，适合旧设备",checked_func=function() return home.layout_style=="compact" end,callback=function()
             self:_set_home_layout("compact")
         end},
+        {text="书架排序",post_text=sort_label,sub_item_table_func=function() return self:home_shelf_sort_menu() end},
     }
 end
 
@@ -442,7 +467,7 @@ end
 
 local READER_QUICK_LABELS={
     toc="目录",progress="阅读进度",font="字体排版",frontlight="前光",sync="阅读同步",
-    comment_font="评论显示",page_display="页面显示",home="觅阅书架",typeset="高级排版",
+    comment_font="想法显示",page_display="页面显示",home="觅阅书架",typeset="高级排版",
     current_book="当前书籍",downloads="下载管理",full_refresh="全屏刷新",
     koreader_menu="KOReader 高级菜单",sleep="休眠",
 }

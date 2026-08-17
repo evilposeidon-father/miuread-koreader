@@ -112,7 +112,7 @@ function Plugin:search(q)
         for _,g in ipairs(data.results or data.books or {}) do
             if g.books then for _,r in ipairs(g.books) do add(r) end else add(g) end
         end
-        self:list(_("Search").." · "..q,items,"没有找到相关书籍")
+        self:list(_("Search").." · "..q,items,"没有找到相关书籍，换个关键词试试")
     end
 
     local function run_on_main_thread()
@@ -306,7 +306,7 @@ function Plugin:mp_search_dialog(book,articles)
                 for _,article in ipairs(articles or {}) do
                     if tostring(article.title or ""):lower():find(query,1,true) then results[#results+1]=article end
                 end
-                if #results==0 then self:info("没有找到相关文章") else self:show_mp_articles(book,results,"搜索结果") end
+                if #results==0 then self:info("没有找到相关文章，换个关键词试试") else self:show_mp_articles(book,results,"搜索结果") end
             end},
         }},
     }

@@ -112,4 +112,75 @@ function T.test_reflow_clears_page_cache()
     B.eq(doc.box_calls(), before + 1, "reflow recomputes page")
 end
 
+function T.test_nearest_finds_closest_record()
+    local doc = fake_document()
+    local o = fake_overlay(doc)
+    -- records: [10,20] and [30,40]
+    local record, d = o:nearest(28)
+    B.eq(record.pos0, "30", "closest span start")
+    B.eq(d, 2, "distance to span edge")
+end
+
+function T.test_nearest_inside_span_is_zero()
+    local doc = fake_document()
+    local o = fake_overlay(doc)
+    local record, d = o:nearest(15)
+    B.eq(record.pos0, "10", "inside span picks that record")
+    B.eq(d, 0, "distance zero inside span")
+end
+
+function T.test_nearest_ties_prefer_first_record()
+    local doc = fake_document()
+    local o = fake_overlay(doc)
+    -- equidistant between [10,20] and [30,40]
+    local record, d = o:nearest(25)
+    B.ok(record ~= nil)
+    B.eq(d, 5)
+end
+
+function T.test_nearest_empty_records_returns_nil()
+    local doc = fake_document()
+    local o = Overlay:new({ records = {} })
+    o.ui = { document = doc }
+    local record = o:nearest(10)
+    B.ok(record == nil, "no records -> nil")
+end
+
+function T.test_nearest_no_document_returns_nil()
+    local o = Overlay:new({ records = { { pos0 = "1", pos1 = "2" } } })
+    local record = o:nearest(10)
+    B.ok(record == nil, "no ui.document -> nil")
+end
+
+function T.test_warm_positions_batches_lookups()
+    local doc = fake_document()
+    local o = fake_overlay(doc)
+    B.eq(o:missingPositions(1), 1, "first missing reported")
+    B.eq(o:missingPositions(5), 2, "both records missing")
+    B.eq(o:warmPositions(1), 1, "warms one record per call")
+    B.eq(o:missingPositions(5), 1, "one still missing")
+    o:warmPositions(5)
+    B.eq(o:missingPositions(5), 0, "all warmed")
+    o:_computeVisible()
+    local calls = doc.calls()
+    o:_computeVisible()
+    B.eq(doc.calls(), calls, "warmed cache reused by paint")
+end
+
+function T.test_nearest_neg_cache_skips_failed_lookups()
+    local doc = {
+        getCurrentPos = function() return 0 end,
+        getPosFromXPointer = function() error("cannot locate") end,
+        getScreenBoxesFromPositions = function() return {} end,
+    }
+    local o = Overlay:new({ records = { { id = "bad", pos0 = "10", pos1 = "20" } } })
+    o.ui = { document = doc, dimen = { h = 100 }, paging = false }
+    o.view = { view_mode = "page", drawHighlightRect = function() end }
+    local ok, err = pcall(function() o:nearest(0) end)
+    B.ok(ok, "nearest tolerates lookup failure: " .. tostring(err))
+    B.eq(o:missingPositions(5), 0, "failed record is neg-cached, not missing")
+    o:resetLayout()
+    B.eq(o:missingPositions(5), 0, "neg cache survives resetLayout")
+end
+
 return T

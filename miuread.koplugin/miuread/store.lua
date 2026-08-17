@@ -7,6 +7,15 @@ local DownloadDatabase=require("miuread.download_database")
 local U=require("miuread.util")
 local logger=require("logger")
 local Store={}; Store.__index=Store
+
+-- KOReader instantiates non-doc-only plugins once per FileManager AND per
+-- ReaderUI, and Plugin:init() calls Store:new() every time. Without sharing,
+-- the reader instance's ledger writes (memory) are invisible to the home
+-- instance and any home flush overwrites the settings file with its stale
+-- in-memory copy — the exact "written but never readable" symptom the device
+-- showed for read_time_ledger. Non-isolated stores for the same settings file
+-- therefore share one instance (isolated workers keep their own).
+local shared_store
 local StoreDownloads=require("miuread.store_downloads")
 local StoreAuth=require("miuread.store_auth")
 local StoreSessions=require("miuread.store_sessions")
@@ -86,6 +95,12 @@ end
 
 function Store:new(options)
     options=options or {}
+    if options.isolated~=true then
+        local settings_path=options.settings_path or (DataStorage:getSettingsDir().."/miuread.lua")
+        if shared_store and shared_store.settings_path==settings_path then
+            return shared_store
+        end
+    end
     local data=options.data_dir or (DataStorage:getFullDataDir().."/"..Config.DATA_DIR)
     U.mkdir(data); U.mkdir(data.."/books"); U.mkdir(data.."/mp"); U.mkdir(data.."/covers"); U.mkdir(data.."/temp"); U.mkdir(data.."/updates")
     local settings_path=options.settings_path or (DataStorage:getSettingsDir().."/miuread.lua")
@@ -114,6 +129,7 @@ function Store:new(options)
     if not o.isolated then
         local valid=settings_file_valid(o.settings_path)
         if valid then refresh_settings_backup(o.settings_path,o.settings_backup_path) end
+        shared_store = o
     end
     return o
 end
@@ -164,6 +180,12 @@ function Store:migrate()
             -- Public builds use one fixed OTA manifest. Legacy channel/URL
             -- preferences are ignored and replaced by the repository address.
             p.update={manifest=Config.UPDATE_MANIFEST}
+        end
+        if schema<113 then
+            -- Sync is fully automatic and silent: existing installs keep the
+            -- success toasts off so the reader is never reminded about sync.
+            p.sync=p.sync or {}
+            p.sync.success_notice_enabled=false
         end
         if schema<18 then
             -- Replace the legacy centered comment card with the compact

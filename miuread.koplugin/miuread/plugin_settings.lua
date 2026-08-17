@@ -6,15 +6,8 @@ local function append(rows,items)
 end
 
 function M.sync(plugin)
-    local rows={
-        {text="同步状态",post_text=plugin:_home_sync_status_label(),callback=function() plugin:show_sync_status(false) end},
-        {text="同步待处理内容",post_text="进度 时间 划线 想法",callback=function() plugin:_sync_home_pending() end},
-    }
-    append(rows,plugin:sync_settings_menu())
-    if plugin:_current_book_record() then
-        rows[#rows+1]={text="重新读取当前书籍云端进度",callback=function() plugin:manual_sync() end}
-    end
-    return rows
+    -- Sync is fully automatic; this menu only exposes the feature toggles.
+    return plugin:sync_settings_menu()
 end
 
 function M.account_sync(plugin)
@@ -56,11 +49,6 @@ function M.annotation_sync(plugin)
         }
     end
     return {
-        {text="批注同步",post_text="手动 · 阅读页批注中操作",enabled=false},
-        {text="立即同步入口",post_text="阅读页下滑工具栏 · 批注",enabled=false},
-        {text="自动上传",post_text="暂未开启 · 完成真机验证后开放",enabled=false},
-        {text="坐标保护",post_text="raw XHTML · 双向校验 · 官方锚点",enabled=false},
-        {text="坐标诊断",post_text="打开书籍后在阅读页批注中导出",enabled=false},
         {text="新想法可见范围",post_text=plugin:annotation_sync_visibility_label(),sub_item_table_func=function() return plugin:annotation_sync_visibility_menu() end},
     }
 end
@@ -109,7 +97,7 @@ end
 
 function M.menu(plugin)
     return {
-        {text="账号与同步",post_text=plugin:progress_sync_label(),sub_item_table_func=function() return M.account_sync(plugin) end},
+        {text="账号",post_text="登录状态与账号设置",sub_item_table_func=function() return M.account_sync(plugin) end},
         {text="下载与存储",post_text=plugin:_download_settings_summary(),sub_item_table_func=function() return plugin:download_settings_menu() end},
         {text="评论与批注",post_text=plugin:_thought_display_label(),sub_item_table_func=function() return M.comments(plugin) end},
         {text="公众号阅读",sub_item_table_func=function() return plugin:mp_settings_menu() end},

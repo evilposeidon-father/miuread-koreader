@@ -32,7 +32,26 @@ local function fixed_frame(width, height, options, content)
 end
 
 function Skin.frame(width, height, options, content)
-    return fixed_frame(width, height, options, content)
+    options = options or {}
+    -- Margin support makes Skin.frame a superset of Ui.frame (the home surface
+    -- still uses Ui.frame in a few places; they can migrate onto this one).
+    local margin = tonumber(options.margin) or 0
+    if margin == 0 then return fixed_frame(width, height, options, content) end
+    return FrameContainer:new{
+        bordersize = tonumber(options.bordersize) or 0,
+        radius = options.radius or 0,
+        padding = tonumber(options.padding) or 0,
+        margin = margin,
+        background = options.background or Blitbuffer.COLOR_WHITE,
+        color = options.color or Blitbuffer.COLOR_BLACK,
+        CenterContainer:new{
+            dimen = Geom:new{
+                w = math.max(1, width - (margin + (tonumber(options.bordersize) or 0) + (tonumber(options.padding) or 0)) * 2),
+                h = math.max(1, height - (margin + (tonumber(options.bordersize) or 0) + (tonumber(options.padding) or 0)) * 2),
+            },
+            content or Widget:new{dimen = Geom:new{w = 1, h = 1}},
+        },
+    }
 end
 
 function Skin.paper(width, height, options, content)

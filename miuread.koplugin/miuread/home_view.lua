@@ -26,6 +26,7 @@ local U = require("miuread.util")
 local UiScale = require("miuread.ui_scale")
 local Ui = require("miuread.ui_components")
 local Cards = require("miuread.home_cards")
+local HomeLayouts = require("miuread.home_layout_constants")
 
 local Screen = Device.screen
 local live_widget
@@ -36,7 +37,8 @@ local function face(name, nominal, maximum, minimum)
 end
 
 local OffsetContainer = Ui.OffsetContainer
-local fixed_frame = Ui.frame
+local Skin = require("miuread.reader_skin")
+local fixed_frame = Skin.frame
 local TapBox = Ui.TapBox
 
 local function tappable(width, height, child, callback, hold_callback)
@@ -124,7 +126,11 @@ function HomeWidget:_metrics()
         and math.max(UiScale.dp(42, 42, 58), math.min(UiScale.dp(56, 48, 64), math.floor(sh * .052)))
         or math.max(UiScale.dp(38, 38, 52), math.min(UiScale.dp(48, 42, 56), math.floor(sh * .068)))
     local gap = math.max(UiScale.dp(4, 4, 8), math.min(UiScale.dp(7, 5, 10), math.floor(sh * .006)))
-    local line = UiScale.line("thin")
+    local line = Skin.line("thin")
+    -- Bottom three-tab bar (书架/书城/我的), reserved from the body height.
+    local tab_h = portrait
+        and math.max(UiScale.dp(50, 50, 62), math.min(UiScale.dp(60, 54, 68), math.floor(sh * .058)))
+        or math.max(UiScale.dp(44, 44, 54), math.min(UiScale.dp(50, 46, 58), math.floor(sh * .072)))
     return {
         sw = sw,
         sh = sh,
@@ -132,10 +138,11 @@ function HomeWidget:_metrics()
         margin = margin,
         gap = gap,
         line = line,
+        tab_h = tab_h,
         content_w = sw - margin * 2,
         header_h = header_h,
         body_y = margin + header_h + line + gap,
-        body_h = sh - (margin + header_h + line + gap) - margin,
+        body_h = sh - (margin + header_h + line + gap) - margin - tab_h,
     }
 end
 
@@ -191,6 +198,7 @@ function HomeWidget:onHomeQuickPanelPanRelease(_, ges)
 end
 
 function HomeWidget:onHomeShelfSwipe(_,ges)
+    if self:_current_page() ~= "shelf" then return false end
     if not (ges and self.opts and self.opts.on_shelf_page) then return false end
     if ges.direction=="west" then self.opts.on_shelf_page(1); return true end
     if ges.direction=="east" then self.opts.on_shelf_page(-1); return true end
@@ -198,19 +206,18 @@ function HomeWidget:onHomeShelfSwipe(_,ges)
 end
 
 function HomeWidget:_build_header(children, m)
-    -- Independent compact groups: account | Wi-Fi/SSID | sync | time | battery.
+    -- Independent compact groups: account | Wi-Fi/SSID | time | battery.
     -- Keep direct references to the text widgets so minute/device updates can
     -- repaint only the changed header field instead of rebuilding the home.
     local gap = math.max(UiScale.dp(2, 2, 4), math.floor(m.content_w * .003))
     local title_w = math.max(UiScale.dp(66, 58, 86), math.floor(m.content_w * .10))
     local account_w = math.max(UiScale.dp(112, 98, 145), math.floor(m.content_w * .15))
-    local sync_w = math.max(UiScale.dp(94, 82, 124), math.floor(m.content_w * .13))
     local time_w = math.max(UiScale.dp(57, 51, 74), math.floor(m.content_w * .075))
     local battery_w = math.max(UiScale.dp(78, 69, 102), math.floor(m.content_w * .10))
     local menu_w = math.max(UiScale.dp(62, 55, 82), math.floor(m.content_w * .085))
     local wifi_w = math.max(UiScale.dp(132, 116, 176),
-        m.content_w - title_w - account_w - sync_w - time_w - battery_w - menu_w - gap * 6)
-    local used = title_w + account_w + wifi_w + sync_w + time_w + battery_w + menu_w + gap * 6
+        m.content_w - title_w - account_w - time_w - battery_w - menu_w - gap * 5)
+    local used = title_w + account_w + wifi_w + time_w + battery_w + menu_w + gap * 5
     if used > m.content_w then
         wifi_w = math.max(UiScale.dp(92, 82, 122), wifi_w - (used - m.content_w))
     end
@@ -218,7 +225,6 @@ function HomeWidget:_build_header(children, m)
     if account_text=="" then account_text="未登录" end
     local wifi_text=tostring(self.opts.wifi_text or "")
     if wifi_text=="" then wifi_text="Wi-Fi" end
-    local sync_text=tostring(self.opts.sync_text or "已同步")
 
     local account_cell=Ui.textbox(account_text,
         account_w, m.header_h, face("smallinfofont", 10.8, 14.8), {
@@ -227,11 +233,6 @@ function HomeWidget:_build_header(children, m)
         })
     local wifi_value_cell=Ui.textbox(wifi_text,math.max(1,wifi_w-UiScale.dp(24,21,33)),m.header_h,
         face("smallinfofont",10.5,14.5),{
-            bold=true,alignment="left",halign="left",fgcolor=Blitbuffer.COLOR_BLACK,
-            height_overflow_show_ellipsis=true,
-        })
-    local sync_value_cell=Ui.textbox(sync_text,math.max(1,sync_w-UiScale.dp(22,19,30)),m.header_h,
-        face("smallinfofont",10.1,14),{
             bold=true,alignment="left",halign="left",fgcolor=Blitbuffer.COLOR_BLACK,
             height_overflow_show_ellipsis=true,
         })
@@ -264,16 +265,6 @@ function HomeWidget:_build_header(children, m)
             },
         }, self.opts.on_quick_panel),
         HorizontalSpan:new{width = gap},
-        tappable(sync_w, m.header_h, LeftContainer:new{
-            dimen=Geom:new{w=sync_w,h=m.header_h},
-            HorizontalGroup:new{
-                align="center",
-                Ui.icon("sync",UiScale.dp(20,18,27),m.header_h,UiScale.dp(16,14,21),{icon_key="sync"}),
-                HorizontalSpan:new{width=UiScale.dp(2,1,3)},
-                sync_value_cell,
-            },
-        }, self.opts.on_sync or self.opts.on_quick_panel, self.opts.on_sync_hold),
-        HorizontalSpan:new{width = gap},
         time_cell,
         HorizontalSpan:new{width = gap},
         CenterContainer:new{
@@ -298,7 +289,6 @@ function HomeWidget:_build_header(children, m)
     self._header_text_refs={
         account=account_cell[1],
         wifi=wifi_value_cell[1],
-        sync=sync_value_cell[1],
         time=time_cell[1],
         battery=battery_value_cell[1],
     }
@@ -308,8 +298,6 @@ function HomeWidget:_build_header(children, m)
     field_x=field_x+account_w+gap
     self._header_field_dimens.wifi=Geom:new{x=field_x,y=m.margin,w=wifi_w,h=m.header_h}
     field_x=field_x+wifi_w+gap
-    self._header_field_dimens.sync=Geom:new{x=field_x,y=m.margin,w=sync_w,h=m.header_h}
-    field_x=field_x+sync_w+gap
     self._header_field_dimens.time=Geom:new{x=field_x,y=m.margin,w=time_w,h=m.header_h}
     field_x=field_x+time_w+gap
     self._header_field_dimens.battery=Geom:new{x=field_x,y=m.margin,w=battery_w,h=m.header_h}
@@ -318,7 +306,7 @@ function HomeWidget:_build_header(children, m)
     self:_add(children, m.margin, m.margin + m.header_h,
         LineWidget:new{
             background = Blitbuffer.COLOR_GRAY,
-            dimen = Geom:new{w = m.content_w, h = m.line or UiScale.line("thin")},
+            dimen = Geom:new{w = m.content_w, h = m.line or Skin.line("thin")},
         })
 end
 
@@ -447,7 +435,7 @@ function HomeWidget:_build_sections(children, m, compact, mode)
             if #books > 0 then
                 self:_render_grid(children, m, shelf_x, sy, shelf_w, grid_h, books, self.opts.on_open_book, self.opts.on_hold_book, 2)
             else
-                self:_add(children, shelf_x, sy, Cards.empty_section(shelf_w, grid_h, self.opts.empty_text or "暂时没有内容", self.opts.on_shelf_all))
+                self:_add(children, shelf_x, sy, Cards.empty_section(shelf_w, grid_h, self.opts.empty_text or "暂时没有内容", self.opts.on_empty_shelf or self.opts.on_shelf_all))
             end
             self:_add(children, shelf_x, bottom - footer_h, page_footer(shelf_w, footer_h, self.opts.shelf_page, self.opts.shelf_pages, self.opts.on_shelf_page or function() end))
         end
@@ -488,9 +476,70 @@ function HomeWidget:_build_sections(children, m, compact, mode)
     if #books > 0 then
         self:_render_grid(children, m, x, y, w, grid_h, books, self.opts.on_open_book, self.opts.on_hold_book, 2)
     else
-        self:_add(children, x, y, Cards.empty_section(w, grid_h, self.opts.empty_text or "暂时没有内容", self.opts.on_shelf_all))
+        self:_add(children, x, y, Cards.empty_section(w, grid_h, self.opts.empty_text or "暂时没有内容", self.opts.on_empty_shelf or self.opts.on_shelf_all))
     end
     self:_add(children, x, bottom - footer_h, page_footer(w, footer_h, self.opts.shelf_page, self.opts.shelf_pages, self.opts.on_shelf_page or function() end))
+end
+
+function HomeWidget:_current_page()
+    return HomeLayouts.normalize_page(self.opts and self.opts.page)
+end
+
+function HomeWidget:_build_tab_bar(children, m)
+    local tabs = self.opts and self.opts.tabs_bottom or nil
+    if type(tabs) ~= "table" or #tabs == 0 then return end
+    local bar_h = math.max(1, m.tab_h)
+    local y = math.max(0, m.sh - m.margin - bar_h)
+    self:_add(children, m.margin, y, Cards.tab_bar(tabs, m.content_w, bar_h))
+    self.tab_bar_dimen = Geom:new{x = m.margin, y = y, w = m.content_w, h = bar_h}
+end
+
+function HomeWidget:_build_store_page(children, m)
+    local x, y, w, gap = m.margin, m.body_y, m.content_w, m.gap
+    local bottom = math.max(1, m.sh - m.margin - m.tab_h)
+    local search_h = math.max(UiScale.dp(56, 52, 74), math.min(UiScale.dp(76, 66, 88), math.floor((bottom - y) * .13)))
+    self:_add(children, x, y, Cards.entry_row("搜索微信读书", "全库搜索 · 未加入书架也能下载", w, search_h,
+        self.opts and self.opts.on_store_search, "⌕"))
+    y = y + search_h + gap
+    local mp_h = math.max(UiScale.dp(50, 46, 60), math.min(UiScale.dp(58, 52, 68), math.floor((bottom - y) * .10)))
+    self:_add(children, x, y, Cards.entry_row("公众号", "订阅号文章阅读", w, mp_h,
+        self.opts and self.opts.on_store_mp, "◎"))
+    y = y + mp_h + gap
+    local note_h = math.max(1, bottom - y - gap)
+    self:_add(children, x, y, Cards.empty_section(w, note_h,
+        "书城提供全库搜索；榜单与分类推荐暂未接入，验证可用后补齐。", nil))
+    self.section_dimen = Geom:new{x = x, y = y, w = w, h = math.max(1, bottom - y)}
+end
+
+function HomeWidget:_build_me_page(children, m)
+    local x, y, w, gap = m.margin, m.body_y, m.content_w, m.gap
+    local bottom = math.max(1, m.sh - m.margin - m.tab_h)
+    local account_h = math.max(UiScale.dp(50, 46, 60), math.min(UiScale.dp(58, 52, 68), math.floor((bottom - y) * .10)))
+    local account_name = tostring((self.opts and self.opts.account_name) or "")
+    if account_name == "" then account_name = "未登录" end
+    self:_add(children, x, y, Cards.entry_row(account_name, "账号状态 · 点击查看", w, account_h,
+        self.opts and self.opts.on_account, ""))
+    y = y + account_h + gap
+    local stats = type(self.opts and self.opts.me_stats) == "table" and self.opts.me_stats or {}
+    local card_h = math.max(UiScale.dp(72, 64, 92), math.min(UiScale.dp(92, 80, 106), math.floor((bottom - y) * .17)))
+    self:_add(children, x, y, Cards.duration_card(
+        tostring(stats.today or "—"), tostring(stats.week or "—"), w, card_h,
+        self.opts and self.opts.on_refresh_duration, "点击卡片刷新 · 阅读周报另见下方"))
+    y = y + card_h + gap
+    local rows = {
+        {t = "阅读周报", s = "今日与本周阅读统计", cb = self.opts and self.opts.on_reading_report},
+        {t = "我的批注", s = "划线与想法 · 最近优先", cb = self.opts and self.opts.on_my_annotations},
+        {t = "全部书籍", s = "浏览完整书架", cb = self.opts and self.opts.on_all_books},
+        {t = "阅读历史", s = "最近阅读记录", cb = self.opts and self.opts.on_history},
+        {t = "设置", s = "阅读与同步设置", cb = self.opts and self.opts.on_settings},
+    }
+    local row_h = math.max(UiScale.dp(50, 46, 60), math.min(UiScale.dp(56, 50, 64), math.floor((bottom - y) * .10)))
+    for _, row in ipairs(rows) do
+        if y + row_h > bottom then break end
+        self:_add(children, x, y, Cards.entry_row(row.t, row.s, w, row_h, row.cb, ""))
+        y = y + row_h + math.max(2, math.floor(gap * .3))
+    end
+    self.section_dimen = Geom:new{x = x, y = y, w = w, h = math.max(1, bottom - y)}
 end
 
 function HomeWidget:_section_cache_id(opts)
@@ -540,7 +589,10 @@ function HomeWidget:_remember_section_layer(cache_id,layer,region,slots)
 end
 
 function HomeWidget:_rebuild()
-    self:_clear_inactive_section_cache()
+    local page = self:_current_page()
+    -- Keep the shelf section LRU alive while browsing 书城/我的; only clear
+    -- caches when rebuilding the shelf itself.
+    if page == "shelf" then self:_clear_inactive_section_cache() end
     UiScale.setDisplayMode(self.opts and self.opts.display_size or "standard")
     local m = self:_metrics()
     self._last_screen_w, self._last_screen_h = m.sw, m.sh
@@ -556,20 +608,31 @@ function HomeWidget:_rebuild()
     self:_build_header(children, m)
     local compact = tostring(self.opts.layout_style or "standard") == "compact"
     local static_body_layer = OverlapGroup:new{dimen = self.dimen:copy(), allow_mirroring = false}
-    self:_build_sections(static_body_layer, m, compact, "static")
+    if page == "store" then
+        self:_build_store_page(static_body_layer, m)
+    elseif page == "me" then
+        self:_build_me_page(static_body_layer, m)
+    else
+        self:_build_sections(static_body_layer, m, compact, "static")
+    end
     children[#children + 1] = static_body_layer
     self._static_body_layer = static_body_layer
     self._static_body_layer_index = #children
     local section_layer = OverlapGroup:new{dimen = self.dimen:copy(), allow_mirroring = false}
-    self._building_shelf_slots={}
-    self:_build_sections(section_layer, m, compact, "section")
-    local section_slots=self._building_shelf_slots
-    self._building_shelf_slots=nil
+    if page == "shelf" then
+        self._building_shelf_slots={}
+        self:_build_sections(section_layer, m, compact, "section")
+        local section_slots=self._building_shelf_slots
+        self._building_shelf_slots=nil
+        self._section_book_slots=section_slots
+        self:_remember_section_layer(self:_section_cache_id(self.opts),section_layer,self.section_dimen,section_slots)
+    else
+        self._section_book_slots=nil
+    end
     children[#children + 1] = section_layer
     self._section_layer = section_layer
-    self._section_book_slots=section_slots
     self._section_layer_index = #children
-    self:_remember_section_layer(self:_section_cache_id(self.opts),section_layer,self.section_dimen,section_slots)
+    self:_build_tab_bar(children, m)
     local previous = self[1]
     self[1] = children
     if previous and previous ~= children and previous.free then pcall(previous.free, previous) end
@@ -623,7 +686,6 @@ function HomeWidget:updateHeader(fields)
     local mapping={
         account_name={ref="account",default="未登录"},
         wifi_text={ref="wifi",default="Wi-Fi"},
-        sync_text={ref="sync",default="已同步"},
         time_text={ref="time",default="--:--"},
         battery_text={ref="battery",default="--%"},
     }
@@ -661,6 +723,9 @@ function HomeWidget:updateHeader(fields)
 end
 
 function HomeWidget:updateSection(opts)
+    -- 书城/我的 pages carry no shelf section layer; page switches rebuild the
+    -- whole widget, so partial section updates are irrelevant here.
+    if self:_current_page() ~= "shelf" then return true end
     local started=os.clock()
     opts = opts or {}
     self.opts.tabs = opts.tabs or self.opts.tabs
@@ -721,6 +786,7 @@ end
 
 
 function HomeWidget:updateHero(hero)
+    if self:_current_page() ~= "shelf" then return true end
     self.opts = self.opts or {}
     self.opts.hero = hero
     local m = self._metrics_cache
@@ -797,11 +863,13 @@ end
 
 function HomeWidget:onShelfNext()
     self:_notify_resume_interaction("page-next")
+    if self:_current_page() ~= "shelf" then return true end
     if self.opts and self.opts.on_shelf_page then self.opts.on_shelf_page(1) end
     return true
 end
 function HomeWidget:onShelfPrevious()
     self:_notify_resume_interaction("page-previous")
+    if self:_current_page() ~= "shelf" then return true end
     if self.opts and self.opts.on_shelf_page then self.opts.on_shelf_page(-1) end
     return true
 end
@@ -814,6 +882,10 @@ function HomeWidget:onMenu()
 end
 function HomeWidget:onBack()
     self:_notify_resume_interaction("back")
+    if self:_current_page() ~= "shelf" then
+        if self.opts and self.opts.on_page then self.opts.on_page("shelf") end
+        return true
+    end
     if self.opts and self.opts.on_back then
         local ok,handled=pcall(self.opts.on_back)
         if ok and handled==true then

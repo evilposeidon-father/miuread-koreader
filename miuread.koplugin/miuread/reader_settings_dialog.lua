@@ -18,6 +18,7 @@ local TransientGuard = require("miuread.transient_guard")
 local Skin = require("miuread.reader_skin")
 local PanelBase = require("miuread.reader_panel_base")
 local Ui = require("miuread.ui_components")
+local UiRows = require("miuread.ui_rows")
 
 local Screen = Device.screen
 local live_dialog
@@ -88,53 +89,30 @@ end
 
 function Dialog:_row_widget(row, width, height)
     local enabled = row.enabled ~= false
-    local pad = Skin.dp(8, 6, 11)
-    local icon = tostring(row.icon or "")
     local value = tostring(row.value or row.detail or "")
     if row.checked == true then value = value ~= "" and (value .. "  ✓") or "✓" end
-    -- Reader settings stay visually flat by default. A chevron is shown only
-    -- when a caller explicitly requests one for a true child-page affordance.
-    local arrow = row.arrow == true and row.callback ~= nil
-    local icon_w = icon ~= "" and Skin.dp(28, 23, 38) or 0
-    local arrow_w = arrow and Skin.dp(17, 14, 23) or 0
-    local value_w = value ~= "" and math.max(Skin.dp(88, 72, 118), math.floor(width * .32)) or 0
-    local gap = Skin.dp(4, 3, 6)
-    local label_w = math.max(1, width - pad * 2 - icon_w - value_w - arrow_w
-        - gap * ((icon_w > 0 and 1 or 0) + (value_w > 0 and 1 or 0) + (arrow_w > 0 and 1 or 0)))
-    local inner_h = math.max(1, height - pad * 2)
-    local row_content = HorizontalGroup:new{align = "center"}
-
-    if icon_w > 0 then
-        row_content[#row_content + 1] = Ui.icon(icon, icon_w, inner_h, Skin.dp(20, 17, 27), {
-            icon_key = icon,
-            face = Skin.face("cfont", 12.7, 17.2, 10.8),
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-        })
-        row_content[#row_content + 1] = HorizontalSpan:new{width = gap}
-    end
-
-    row_content[#row_content + 1] = Ui.textbox(tostring(row.label or row.text or ""), label_w, inner_h,
-        Skin.face("cfont", 10.9, 14.8, 9.4), {
-            bold = row.bold == true or row.checked == true, alignment = "left",
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-        })
-
-    if value_w > 0 then
-        row_content[#row_content + 1] = HorizontalSpan:new{width = gap}
-        row_content[#row_content + 1] = Ui.textbox(value, value_w, inner_h,
-            Skin.face("cfont", 10.0, 13.3, 8.5), {
-                bold = row.value_bold == true, alignment = "right", halign = "right",
-                fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY,
-            })
-    end
-
-    if arrow_w > 0 then
-        row_content[#row_content + 1] = HorizontalSpan:new{width = gap}
-        row_content[#row_content + 1] = Ui.icon("chevron-right", arrow_w, inner_h, Skin.dp(15, 13, 20), {
-            face = Skin.face("cfont", 13.4, 18, 11),
-            fgcolor = enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY,
-        })
-    end
+    -- Shared row skeleton (same as home rows / control center). Reader
+    -- settings stay visually flat: chevron only on explicit arrow=true.
+    local row_content = UiRows.build({
+        icon = row.icon or "",
+        label = row.label or row.text or "",
+        value = value,
+        enabled = enabled,
+        arrow = row.arrow == true,
+        bold = row.bold == true or row.checked == true,
+        value_bold = row.value_bold == true,
+        callback = row.callback,
+    }, width, height, {
+        pad = Skin.dp(8, 6, 11),
+        icon_w = Skin.dp(28, 23, 38),
+        value_w = math.max(Skin.dp(88, 72, 118), math.floor(width * .32)),
+        chevron_w = Skin.dp(17, 14, 23),
+        gap = Skin.dp(4, 3, 6),
+        icon_gap = Skin.dp(4, 3, 6),
+        checked = row.checked == true,
+        icon_size = Skin.dp(20, 17, 27),
+        icon_face = Skin.face("cfont", 12.7, 17.2, 10.8),
+    })
 
     local tap = TapBox:new{
         dimen = Geom:new{w = width, h = height},
@@ -292,7 +270,7 @@ function Dialog:_build_content()
     local header = HorizontalGroup:new{
         align = "center",
         back_tap,
-        Ui.textbox(tostring(self.opts.title or "阅读设置"), title_w, header_h,
+        Ui.textbox(tostring(self.opts.title or "阅读界面设置"), title_w, header_h,
             Skin.face("cfont", 16.2, 20.8, 13.6), {
                 bold = true, alignment = "center", halign = "center", fgcolor = Blitbuffer.COLOR_BLACK,
             }),

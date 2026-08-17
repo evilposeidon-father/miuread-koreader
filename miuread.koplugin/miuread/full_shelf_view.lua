@@ -52,7 +52,8 @@ function RoundedImage:paintTo(bb, x, y)
     end
 end
 
-local fixed_frame = Ui.frame
+local Skin = require("miuread.reader_skin")
+local fixed_frame = Skin.frame
 
 local TapBox = Ui.TapBox
 
@@ -81,7 +82,7 @@ local function image_widget(path, width, height)
     local rounded = RoundedImage:new{
         width = width,
         height = height,
-        radius = UiScale.radius(7, 5, 12),
+        radius = Skin.radius(7, 5, 12),
         ink_boost = .11,
     }
     rounded[1] = CenterContainer:new{dimen = Geom:new{w = width, h = height}, image}
@@ -92,32 +93,32 @@ local function placeholder(width, height, title, author)
     title = U.trim(tostring(title or "未命名"))
     author = U.trim(tostring(author or ""))
     if title == "" then title = "未命名" end
-    local pad = UiScale.dp(3, 2, 5)
+    local pad = Skin.dp(3, 2, 5)
     local content_w = math.max(1, width - pad * 2)
     local content_h = math.max(1, height - pad * 2)
     local title_h = math.max(1, math.floor(content_h * (author ~= "" and .60 or .80)))
     local body = VerticalGroup:new{align = "center", TextBoxWidget:new{
         text = U.utf8_truncate(title, 24, "…"), face = face("cfont", 10.8, 15.5), bold = true,
-        width = math.max(1, content_w - UiScale.dp(4, 3, 7)), height = title_h,
+        width = math.max(1, content_w - Skin.dp(4, 3, 7)), height = title_h,
         height_adjust = false, height_overflow_show_ellipsis = true, alignment = "center",
     }}
     if author ~= "" then
         body[#body + 1] = TextBoxWidget:new{
             text = U.utf8_truncate(author, 18, "…"), face = face("smallinfofont", 7.8, 10.8),
-            width = math.max(1, content_w - UiScale.dp(4, 3, 7)), height = math.max(1, content_h - title_h),
+            width = math.max(1, content_w - Skin.dp(4, 3, 7)), height = math.max(1, content_h - title_h),
             height_adjust = false, height_overflow_show_ellipsis = true, alignment = "center",
             fgcolor = Blitbuffer.COLOR_DARK_GRAY,
         }
     end
     return fixed_frame(width, height, {
-        bordersize = UiScale.line("thin"), radius = UiScale.radius(7, 5, 12),
+        bordersize = Skin.line("thin"), radius = Skin.radius(7, 5, 12),
         padding = pad, background = Blitbuffer.COLOR_WHITE, color = Blitbuffer.COLOR_GRAY,
     }, body)
 end
 
 local function outlined_badge(text, width, height)
     local layer = OverlapGroup:new{dimen = Geom:new{w = width, h = height}, allow_mirroring = false}
-    local radius = math.max(2, UiScale.dp(2, 2, 3))
+    local radius = math.max(2, Skin.dp(2, 2, 3))
     local offsets = {
         {-radius,0},{radius,0},{0,-radius},{0,radius},
         {-radius,-radius},{-radius,radius},{radius,-radius},{radius,radius},
@@ -135,10 +136,10 @@ local function outlined_badge(text, width, height)
 end
 
 local function book_card(book, width, height, on_select, on_hold)
-    local title_h = UiScale.dp(31, 27, 44)
-    local gap = UiScale.dp(3, 2, 5)
-    local cover_h = math.max(UiScale.dp(116, 98, 190), height - title_h - gap)
-    local cover_w = math.max(UiScale.dp(76, 65, 126), math.min(math.floor(width * .92), math.floor(cover_h * .715)))
+    local title_h = Skin.dp(31, 27, 44)
+    local gap = Skin.dp(3, 2, 5)
+    local cover_h = math.max(Skin.dp(116, 98, 190), height - title_h - gap)
+    local cover_w = math.max(Skin.dp(76, 65, 126), math.min(math.floor(width * .92), math.floor(cover_h * .715)))
     local cover = image_widget(book.cover_path, cover_w, cover_h) or placeholder(cover_w, cover_h, book.title, book.author)
     local layer = OverlapGroup:new{dimen = Geom:new{w = cover_w, h = cover_h}, allow_mirroring = false}
     layer[#layer + 1] = cover
@@ -150,15 +151,15 @@ local function book_card(book, width, height, on_select, on_hold)
         or (book.file and tostring(book.file) ~= "" and U.file_exists(tostring(book.file)))
     local progress = math.max(0, math.min(100, tonumber(book.progress) or 0))
     if downloaded then
-        local badge = UiScale.dp(20, 18, 28)
-        local inset = UiScale.dp(3, 2, 5)
+        local badge = Skin.dp(20, 18, 28)
+        local inset = Skin.dp(3, 2, 5)
         layer[#layer + 1] = OffsetContainer:new{x_off = inset, y_off = inset, outlined_badge("✓", badge, badge)}
     end
     if progress > 0 then
         local text = progress >= 100 and "已读" or tostring(math.floor(progress + .5)) .. "%"
-        local badge_w = math.max(UiScale.dp(32, 28, 48), U.utf8_len(text) * UiScale.dp(8, 7, 11) + UiScale.dp(11, 9, 15))
-        local badge_h = UiScale.dp(20, 18, 28)
-        local inset = UiScale.dp(3, 2, 5)
+        local badge_w = math.max(Skin.dp(32, 28, 48), U.utf8_len(text) * Skin.dp(8, 7, 11) + Skin.dp(11, 9, 15))
+        local badge_h = Skin.dp(20, 18, 28)
+        local inset = Skin.dp(3, 2, 5)
         layer[#layer + 1] = OffsetContainer:new{
             x_off = math.max(0, cover_w - badge_w - inset),
             y_off = inset,
@@ -201,10 +202,10 @@ local GridShelfWidget = InputContainer:extend{
 function GridShelfWidget:_metrics()
     local m = UiScale.metrics()
     local sw, sh = m.sw, m.sh
-    local margin = math.max(UiScale.dp(9, 8, 17), math.floor(math.min(sw, sh) * .012))
-    local header_h = UiScale.dp(54, 48, 74)
-    local footer_h = UiScale.dp(45, 40, 62)
-    local gap = UiScale.dp(6, 5, 10)
+    local margin = math.max(Skin.dp(9, 8, 17), math.floor(math.min(sw, sh) * .012))
+    local header_h = Skin.dp(54, 48, 74)
+    local footer_h = Skin.dp(45, 40, 62)
+    local gap = Skin.dp(6, 5, 10)
     local rows = m.portrait and 3 or 2
     return m, margin, header_h, footer_h, gap, rows
 end
@@ -255,15 +256,15 @@ function GridShelfWidget:_build()
     self:_add(layers, 0, 0, fixed_frame(sw, sh, {background = Blitbuffer.COLOR_WHITE}))
 
     local inner_w = math.max(1, sw - margin * 2)
-    local back_w = UiScale.dp(54, 49, 78)
-    local action_w = self.opts.show_actions and UiScale.dp(62, 56, 92) or 0
-    local action_gap = self.opts.show_actions and UiScale.dp(5, 4, 8) or 0
+    local back_w = Skin.dp(54, 49, 78)
+    local action_w = self.opts.show_actions and Skin.dp(62, 56, 92) or 0
+    local action_gap = self.opts.show_actions and Skin.dp(5, 4, 8) or 0
     local right_w = self.opts.show_actions and (action_w * 2 + action_gap) or 0
-    local title_gap = UiScale.dp(5, 4, 8)
+    local title_gap = Skin.dp(5, 4, 8)
     local title_w = math.max(1, inner_w - back_w - title_gap - right_w)
     local header = HorizontalGroup:new{
         align = "center",
-        tappable(back_w, header_h, Ui.icon("back", back_w, header_h, UiScale.dp(20, 18, 28), {
+        tappable(back_w, header_h, Ui.icon("back", back_w, header_h, Skin.dp(20, 18, 28), {
             face = UiScale.iconFace("cfont", 20, 28),
         }), function() self:_close() end),
         HorizontalSpan:new{width = title_gap},
@@ -277,7 +278,7 @@ function GridShelfWidget:_build()
         local right_label=tostring(self.opts.right_action_label or "筛选")
         local left_child
         if left_label=="" or left_label=="搜索" then
-            left_child=Ui.icon("search", action_w, header_h, UiScale.dp(19, 17, 27), {
+            left_child=Ui.icon("search", action_w, header_h, Skin.dp(19, 17, 27), {
                 face = UiScale.iconFace("cfont", 17, 24),
             })
         else
@@ -295,13 +296,13 @@ function GridShelfWidget:_build()
     self:_add(layers, margin, margin, header)
     self:_add(layers, margin, margin + header_h, LineWidget:new{
         background = Blitbuffer.COLOR_GRAY,
-        dimen = Geom:new{w = sw - margin * 2, h = UiScale.line("thin")},
+        dimen = Geom:new{w = sw - margin * 2, h = Skin.line("thin")},
     })
 
-    local grid_y = margin + header_h + UiScale.line("thin") + gap
+    local grid_y = margin + header_h + Skin.line("thin") + gap
     local grid_h = math.max(1, sh - grid_y - footer_h - margin)
-    local col_gap = UiScale.dp(4, 3, 7)
-    local row_gap = UiScale.dp(5, 4, 9)
+    local col_gap = Skin.dp(4, 3, 7)
+    local row_gap = Skin.dp(5, 4, 9)
     local card_w = math.floor((sw - margin * 2 - col_gap * (columns - 1)) / columns)
     local card_h = math.floor((grid_h - row_gap * (rows - 1)) / rows)
     local first = (self.page - 1) * self.perpage + 1
@@ -318,7 +319,7 @@ function GridShelfWidget:_build()
         slot = slot + 1
     end
 
-    local arrow_w = UiScale.dp(74, 66, 108)
+    local arrow_w = Skin.dp(74, 66, 108)
     local middle_w = math.max(1, sw - margin * 2 - arrow_w * 2)
     local footer = HorizontalGroup:new{
         align = "center",

@@ -1,13 +1,19 @@
 local C = {
     NAME = "觅阅 · 微信读书助手",
-    VERSION = "4.5.49",
-    SCHEMA = 112,
+    VERSION = "4.6.2",
+    SCHEMA = 113,
     PLUGIN_DIR = "miuread.koplugin",
     DATA_DIR = "miuread",
 
     -- 微信读书 Web 阅读器上报载荷使用的逆向 reader token（非用户可配）。
     -- 微信读书侧轮换时只需改这里，protocol.lua 从这里读取。
     READER_TOKEN = "3c5c8717f3daf09iop3423zafeqoi",
+
+    -- 崩溃上报（opt-in，默认关闭）：启动时检测到 crash.log 新增崩溃内容后，
+    -- 组装脱敏报告（版本/设备/偏好 + crash 尾部 + 最近操作）。置为 https
+    -- 端点则 POST {"report": "<markdown>"}；留空时仅保存到 temp/crash-reports
+    -- 目录，供用户从诊断入口自行分享。
+    CRASH_REPORT_ENDPOINT = "",
 
     -- 正式版更新清单由 tag 发布流程生成，并作为固定 stable-channel Release
     -- 资源提供。main/update.json 仅用于把 4.1.2 等旧正式版桥接到 4.3.0；

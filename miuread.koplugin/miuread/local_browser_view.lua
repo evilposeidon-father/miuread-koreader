@@ -28,7 +28,8 @@ end
 
 local OffsetContainer = Ui.OffsetContainer
 
-local fixed_frame = Ui.frame
+local Skin = require("miuread.reader_skin")
+local fixed_frame = Skin.frame
 
 local TapBox = Ui.TapBox
 
@@ -51,38 +52,38 @@ local function book_placeholder(width, height, title, author)
     title = U.trim(tostring(title or "未命名"))
     author = U.trim(tostring(author or ""))
     if title == "" then title = "未命名" end
-    local pad = UiScale.dp(3, 2, 5)
+    local pad = Skin.dp(3, 2, 5)
     local content_w = math.max(1, width - pad * 2)
     local content_h = math.max(1, height - pad * 2)
     local title_h = math.max(1, math.floor(content_h * (author ~= "" and .60 or .80)))
     local body = VerticalGroup:new{align = "center", TextBoxWidget:new{
         text = U.utf8_truncate(title, 24, "…"), face = face("cfont", 10.8, 15.5), bold = true,
-        width = math.max(1, content_w - UiScale.dp(4, 3, 7)), height = title_h,
+        width = math.max(1, content_w - Skin.dp(4, 3, 7)), height = title_h,
         height_adjust = false, height_overflow_show_ellipsis = true, alignment = "center",
     }}
     if author ~= "" then
         body[#body + 1] = TextBoxWidget:new{
             text = U.utf8_truncate(author, 18, "…"), face = face("smallinfofont", 7.8, 10.8),
-            width = math.max(1, content_w - UiScale.dp(4, 3, 7)), height = math.max(1, content_h - title_h),
+            width = math.max(1, content_w - Skin.dp(4, 3, 7)), height = math.max(1, content_h - title_h),
             height_adjust = false, height_overflow_show_ellipsis = true, alignment = "center",
             fgcolor = Blitbuffer.COLOR_DARK_GRAY,
         }
     end
     return fixed_frame(width, height, {
-        bordersize = UiScale.line("thin"), radius = UiScale.radius(7, 5, 12),
+        bordersize = Skin.line("thin"), radius = Skin.radius(7, 5, 12),
         padding = pad, background = Blitbuffer.COLOR_WHITE, color = Blitbuffer.COLOR_GRAY,
     }, body)
 end
 
 local function folder_card(folder, width, height, callback)
-    local inner_w = math.max(1, width - UiScale.dp(12, 10, 18))
-    local icon_h = math.max(UiScale.dp(42, 38, 64), math.floor(height * .42))
-    local title_h = math.max(UiScale.dp(28, 24, 40), math.floor(height * .28))
-    local detail_h = math.max(UiScale.dp(20, 18, 30), height - icon_h - title_h - UiScale.dp(12, 10, 18))
+    local inner_w = math.max(1, width - Skin.dp(12, 10, 18))
+    local icon_h = math.max(Skin.dp(42, 38, 64), math.floor(height * .42))
+    local title_h = math.max(Skin.dp(28, 24, 40), math.floor(height * .28))
+    local detail_h = math.max(Skin.dp(20, 18, 30), height - icon_h - title_h - Skin.dp(12, 10, 18))
     local detail = tostring(folder.status_text or folder.detail or "文件夹")
     local body = VerticalGroup:new{
         align = "center",
-        Ui.icon("folder", inner_w, icon_h, UiScale.dp(34, 30, 50), {face = UiScale.iconFace("cfont", 24, 34)}),
+        Ui.icon("folder", inner_w, icon_h, Skin.dp(34, 30, 50), {face = UiScale.iconFace("cfont", 24, 34)}),
         TextBoxWidget:new{
             text = tostring(folder.title or "文件夹"), face = face("cfont", 13, 18), bold = true,
             width = inner_w, height = title_h, height_adjust = false,
@@ -96,17 +97,17 @@ local function folder_card(folder, width, height, callback)
         },
     }
     return tappable(width, height, fixed_frame(width, height, {
-        bordersize = UiScale.line("thin"), padding = UiScale.dp(5, 4, 8),
-        radius = UiScale.radius(8, 6, 13), background = Blitbuffer.COLOR_WHITE,
+        bordersize = Skin.line("thin"), padding = Skin.dp(5, 4, 8),
+        radius = Skin.radius(8, 6, 13), background = Blitbuffer.COLOR_WHITE,
         color = Blitbuffer.COLOR_GRAY,
     }, body), callback)
 end
 
 local function book_card(book, width, height, callback, hold_callback)
-    local title_h = UiScale.dp(31, 27, 44)
-    local gap = UiScale.dp(3, 2, 5)
-    local cover_h = math.max(UiScale.dp(112, 94, 180), height - title_h - gap)
-    local cover_w = math.max(UiScale.dp(74, 62, 122), math.min(math.floor(width * .92), math.floor(cover_h * .715)))
+    local title_h = Skin.dp(31, 27, 44)
+    local gap = Skin.dp(3, 2, 5)
+    local cover_h = math.max(Skin.dp(112, 94, 180), height - title_h - gap)
+    local cover_w = math.max(Skin.dp(74, 62, 122), math.min(math.floor(width * .92), math.floor(cover_h * .715)))
     local cover = image_widget(book.cover_path, cover_w, cover_h) or book_placeholder(cover_w, cover_h, book.title, book.author)
     local body = VerticalGroup:new{
         align = "center", cover, VerticalSpan:new{height = gap},
@@ -127,11 +128,11 @@ local LocalBrowserWidget = InputContainer:extend{
 
 function LocalBrowserWidget:_metrics()
     local m = UiScale.metrics()
-    local margin = math.max(UiScale.dp(9, 8, 17), math.floor(math.min(m.sw, m.sh) * .012))
-    local header_h = UiScale.dp(54, 48, 74)
-    local tab_h = UiScale.dp(38, 34, 52)
-    local footer_h = UiScale.dp(45, 40, 62)
-    local gap = UiScale.dp(6, 5, 10)
+    local margin = math.max(Skin.dp(9, 8, 17), math.floor(math.min(m.sw, m.sh) * .012))
+    local header_h = Skin.dp(54, 48, 74)
+    local tab_h = Skin.dp(38, 34, 52)
+    local footer_h = Skin.dp(45, 40, 62)
+    local gap = Skin.dp(6, 5, 10)
     local rows = m.portrait and 3 or 2
     return m, margin, header_h, tab_h, footer_h, gap, rows
 end
@@ -208,27 +209,27 @@ function LocalBrowserWidget:_build()
     self:_add(layers, 0, 0, fixed_frame(sw, sh, {background = Blitbuffer.COLOR_WHITE}))
 
     local inner_w = math.max(1, sw - margin * 2)
-    local back_w = UiScale.dp(54, 49, 78)
-    local refresh_w = UiScale.dp(60, 54, 88)
-    local title_gap = UiScale.dp(5, 4, 8)
+    local back_w = Skin.dp(54, 49, 78)
+    local refresh_w = Skin.dp(60, 54, 88)
+    local title_gap = Skin.dp(5, 4, 8)
     local title_w = math.max(1, inner_w - back_w - refresh_w - title_gap * 2)
     local header = HorizontalGroup:new{
         align = "center",
-        tappable(back_w, header_h, Ui.icon("back", back_w, header_h, UiScale.dp(20, 18, 28), {
+        tappable(back_w, header_h, Ui.icon("back", back_w, header_h, Skin.dp(20, 18, 28), {
             face = UiScale.iconFace("cfont", 20, 28),
         }), function() self:_back() end),
         HorizontalSpan:new{width = title_gap},
         Ui.textbox(tostring(self.opts and self.opts.title or "本地书籍"), title_w, header_h,
             face("cfont", 16, 22), {bold = true, alignment = "left", halign = "left", valign = "center"}),
         HorizontalSpan:new{width = title_gap},
-        tappable(refresh_w, header_h, Ui.icon("refresh", refresh_w, header_h, UiScale.dp(19, 17, 27), {
+        tappable(refresh_w, header_h, Ui.icon("refresh", refresh_w, header_h, Skin.dp(19, 17, 27), {
             face = UiScale.iconFace("cfont", 17, 24),
         }), self.opts and self.opts.on_refresh or nil),
     }
     self:_add(layers, margin, margin, header)
     self:_add(layers, margin, margin + header_h, LineWidget:new{
         background = Blitbuffer.COLOR_GRAY,
-        dimen = Geom:new{w = sw - margin * 2, h = UiScale.line("thin")},
+        dimen = Geom:new{w = sw - margin * 2, h = Skin.line("thin")},
     })
 
     local folder_count = #((self.opts and self.opts.folders) or {})
@@ -244,10 +245,10 @@ function LocalBrowserWidget:_build()
             fgcolor = selected and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY,
         })
         if selected then
-            local line_w = math.max(UiScale.dp(38, 32, 58), math.floor(width * .28))
+            local line_w = math.max(Skin.dp(38, 32, 58), math.floor(width * .28))
             layers_tab[#layers_tab + 1] = OffsetContainer:new{
-                x_off = math.floor((width - line_w) / 2), y_off = tab_h - UiScale.line("thick"),
-                LineWidget:new{background = Blitbuffer.COLOR_BLACK, dimen = Geom:new{w = line_w, h = UiScale.line("thick")}},
+                x_off = math.floor((width - line_w) / 2), y_off = tab_h - Skin.line("thick"),
+                LineWidget:new{background = Blitbuffer.COLOR_BLACK, dimen = Geom:new{w = line_w, h = Skin.line("thick")}},
             }
         end
         return tappable(width, tab_h, layers_tab, function() self:_set_view_mode(mode) end)
@@ -256,12 +257,12 @@ function LocalBrowserWidget:_build()
         tab("文件夹 " .. tostring(folder_count), "folders", tab_w),
         tab("书籍 " .. tostring(book_count), "books", inner_w - tab_w),
     }
-    self:_add(layers, margin, margin + header_h + UiScale.line("thin"), tabs)
+    self:_add(layers, margin, margin + header_h + Skin.line("thin"), tabs)
 
-    local grid_y = margin + header_h + UiScale.line("thin") + tab_h + gap
+    local grid_y = margin + header_h + Skin.line("thin") + tab_h + gap
     local grid_h = math.max(1, sh - grid_y - footer_h - margin)
-    local col_gap = UiScale.dp(4, 3, 7)
-    local row_gap = UiScale.dp(5, 4, 9)
+    local col_gap = Skin.dp(4, 3, 7)
+    local row_gap = Skin.dp(5, 4, 9)
     local card_w = math.floor((sw - margin * 2 - col_gap * (columns - 1)) / columns)
     local card_h = math.floor((grid_h - row_gap * (rows - 1)) / rows)
     local slot = 0
@@ -292,7 +293,7 @@ function LocalBrowserWidget:_build()
             }))
     end
 
-    local arrow_w = UiScale.dp(74, 66, 108)
+    local arrow_w = Skin.dp(74, 66, 108)
     local middle_w = math.max(1, sw - margin * 2 - arrow_w * 2)
     local footer = HorizontalGroup:new{
         align = "center",

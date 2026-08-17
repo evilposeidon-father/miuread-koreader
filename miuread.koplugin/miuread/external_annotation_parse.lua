@@ -109,6 +109,91 @@ local function clean_book_keyword(path)
     return name
 end
 
+-- Merge located record lists (primary then extra), de-duplicating by record
+-- id (book_id:chapter_uid:range). Extra records whose id collides with the
+-- primary list are dropped; id-less records are always appended.
+function M.merge_records_by_id(primary, extra)
+    local out, seen = {}, {}
+    for _, record in ipairs(type(primary) == "table" and primary or {}) do
+        local id = tostring(record and record.id or "")
+        out[#out + 1] = record
+        if id ~= "" then seen[id] = true end
+    end
+    for _, record in ipairs(type(extra) == "table" and extra or {}) do
+        local id = tostring(record and record.id or "")
+        if id == "" or not seen[id] then
+            seen[id] = true
+            out[#out + 1] = record
+        end
+    end
+    return out
+end
+
+-- Edition markers stripped before title matching so "三体-纯净版" and
+-- "三体（全集）" both normalize to the base title "三体".
+local EDITION_MARKERS = {
+    "纯净版", "注释版", "划线与想法版", "无注释版", "全本", "完整版",
+    "精排版", "无删减", "典藏版", "修订版", "珍藏版", "纪念版",
+    "增订版", "简装版", "精装版", "签名版",
+}
+
+-- Full-width punctuation Lua 5.1's %p class does not cover.
+local FULLWIDTH_PUNCT = "（）《》「」『』【】、。，！？；：“”‘’·—…"
+
+-- Normalize a book title for exact matching: lowercase, drop edition
+-- markers, then strip whitespace and punctuation (ASCII + full-width).
+-- Safe direction: a corrupted normalization only prevents a match, never
+-- creates one.
+function M.normalize_title(value)
+    local text = tostring(value or ""):lower()
+    for _, marker in ipairs(EDITION_MARKERS) do
+        text = text:gsub(marker, "")
+    end
+    text = text:gsub("[%p%c%s]", "")
+    -- Lua 5.1 has no UTF-8 iteration: walk FULLWIDTH_PUNCT by byte length.
+    local i = 1
+    while i <= #FULLWIDTH_PUNCT do
+        local first = FULLWIDTH_PUNCT:byte(i)
+        local length = 1
+        if first >= 0xF0 then length = 4
+        elseif first >= 0xE0 then length = 3
+        elseif first >= 0xC0 then length = 2 end
+        text = text:gsub(FULLWIDTH_PUNCT:sub(i, i + length - 1), "")
+        i = i + length
+    end
+    return text
+end
+
+-- Picks the single unambiguous WeRead search hit for a local book title.
+-- Exact normalized-title equality is required; when the local author is
+-- known it further filters to matching authors. Returns nil when nothing
+-- matches or more than one candidate remains (e.g. several editions of a
+-- re-issued title) — an ambiguous hit is never auto-bound.
+function M.pick_search_match(candidates, title, author)
+    if type(candidates) ~= "table" then return nil end
+    local want = M.normalize_title(title)
+    if want == "" then return nil end
+    local author_norm = M.normalize_title(author or "")
+    local matches = {}
+    for _, item in ipairs(candidates) do
+        if type(item) == "table" and M.normalize_title(item.title or "") == want then
+            matches[#matches + 1] = item
+        end
+    end
+    if #matches == 0 then return nil end
+    if author_norm ~= "" then
+        local by_author = {}
+        for _, item in ipairs(matches) do
+            if M.normalize_title(item.author or "") == author_norm then
+                by_author[#by_author + 1] = item
+            end
+        end
+        if #by_author > 0 then matches = by_author end
+    end
+    if #matches == 1 then return matches[1] end
+    return nil
+end
+
 M.collect_ranges = collect_ranges
 M.catalog_signature = catalog_signature
 M.chapter_uid = chapter_uid
@@ -118,5 +203,39 @@ M.scalar = scalar
 M.collect_records = collect_records
 M.review_parts = review_parts
 M.clean_book_keyword = clean_book_keyword
+
+
+-- Pure: filter located annotation records to one chapter and order them by
+-- in-chapter position (pos0). Never mutates the input.
+-- Matching rules: an exact chapter_uid wins; records without a uid (locate()
+-- writes "" for chapters without one, and the local mirror defaults to "")
+-- fall back to chapter_idx when it is given. A record with a non-matching
+-- uid is always excluded, so a blank uid can never merge unrelated chapters.
+function M.filter_records_by_chapter(records, chapter_uid, chapter_idx)
+    chapter_uid = tostring(chapter_uid or "")
+    chapter_idx = tonumber(chapter_idx)
+    if chapter_uid == "" and chapter_idx == nil then return {} end
+    local out = {}
+    for _, record in ipairs(type(records) == "table" and records or {}) do
+        if type(record) == "table" then
+            local uid = tostring(record.chapter_uid or "")
+            local idx = tonumber(record.chapter_idx)
+            local match
+            if uid ~= "" then
+                match = chapter_uid ~= "" and uid == chapter_uid
+            else
+                match = chapter_idx ~= nil and idx == chapter_idx
+            end
+            if match then out[#out + 1] = record end
+        end
+    end
+    table.sort(out, function(a, b)
+        local pa = tonumber(a.pos0) or 0
+        local pb = tonumber(b.pos0) or 0
+        if pa ~= pb then return pa < pb end
+        return tostring(a.range or "") < tostring(b.range or "")
+    end)
+    return out
+end
 
 return M

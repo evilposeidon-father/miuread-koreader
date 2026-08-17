@@ -53,7 +53,9 @@ function RoundedImageContainer:paintTo(bb, x, y)
     end
 end
 
-local fixed_frame = Ui.frame
+local Skin = require("miuread.reader_skin")
+local UiRows = require("miuread.ui_rows")
+local fixed_frame = Skin.frame
 
 local function background(width, height)
     return fixed_frame(width, height, {background = Blitbuffer.COLOR_WHITE})
@@ -68,7 +70,7 @@ end
 local function text_button(text, width, height, callback, options)
     options = options or {}
     return tappable(width, height, fixed_frame(width, height, {
-        bordersize = options.borderless and 0 or UiScale.line("thin"),
+        bordersize = options.borderless and 0 or Skin.line("thin"),
         padding = UiScale.dp(3, 2, 6),
         background = Blitbuffer.COLOR_WHITE,
     }, TextWidget:new{
@@ -102,7 +104,7 @@ local function image_widget(path, width, height, ink_boost)
         return RoundedImageContainer:new{
             width = width,
             height = height,
-            radius = UiScale.radius(7, 5, 13),
+            radius = Skin.radius(7, 5, 13),
             ink_boost = tonumber(ink_boost) or .08,
             image,
         }
@@ -139,8 +141,8 @@ local function placeholder(width, height, title, author)
         }
     end
     return fixed_frame(width, height, {
-        bordersize = UiScale.line("thin"),
-        radius = UiScale.radius(6, 4, 12),
+        bordersize = Skin.line("thin"),
+        radius = Skin.radius(6, 4, 12),
         padding = pad,
         background = Blitbuffer.COLOR_WHITE,
         color = Blitbuffer.COLOR_GRAY,
@@ -209,7 +211,7 @@ local function notice_strip(item, width, height)
         table.insert(row, progress_bar(progress_w, UiScale.dp(3, 2, 5), item.progress))
     end
     return tappable(width, height, fixed_frame(width, height, {
-        bordersize = item.important == true and UiScale.line("thick") or UiScale.line("thin"),
+        bordersize = item.important == true and Skin.line("thick") or Skin.line("thin"),
         padding = pad,
         background = Blitbuffer.COLOR_WHITE,
     }, row), item.on_tap)
@@ -237,7 +239,8 @@ local function hero_card(book, width, height, callback, compact, hold_callback)
     local heading_text_w = math.max(1, text_w - (refresh_w > 0 and refresh_w + UiScale.dp(3, 2, 5) or 0))
     local title_h = UiScale.dp(compact and 44 or 54, compact and 40 or 48, compact and 64 or 76)
     local line_h = UiScale.dp(27, 23, 36)
-    local description_h = math.max(UiScale.dp(52, 44, 78), inner_h - heading_h - title_h - line_h * 3)
+    local bar_h = math.max(3, UiScale.dp(6, 5, 9))
+    local description_h = math.max(UiScale.dp(52, 44, 78), inner_h - heading_h - title_h - line_h * 3 - bar_h)
     local progress_value = math.max(0, math.min(100, tonumber(book.progress) or 0))
     local progress_text = progress_value > 0
         and ("阅读至 " .. tostring(math.floor(progress_value + .5)) .. "%")
@@ -294,6 +297,8 @@ local function hero_card(book, width, height, callback, compact, hold_callback)
         width = text_w, height = line_h, height_adjust = false,
         height_overflow_show_ellipsis = true, fgcolor = Blitbuffer.COLOR_BLACK,
     })
+    -- WeRead-style progress bar under the progress line.
+    table.insert(text, progress_bar(text_w, bar_h, progress_value / 100))
     table.insert(text, TextBoxWidget:new{
         text = table.concat(source_meta, " · "),
         face = face("smallinfofont", 10, 14),
@@ -312,8 +317,8 @@ local function hero_card(book, width, height, callback, compact, hold_callback)
         x_off = frame_inset,
         y_off = frame_inset,
         fixed_frame(frame_w, frame_h, {
-            bordersize = math.max(UiScale.line("thin"), 1),
-            radius = UiScale.radius(9, 6, 15),
+            bordersize = math.max(Skin.line("thin"), 1),
+            radius = Skin.radius(9, 6, 15),
             padding = pad,
             background = Blitbuffer.COLOR_WHITE,
             color = Blitbuffer.COLOR_DARK_GRAY,
@@ -354,8 +359,8 @@ local function welcome_card(width, height, callback)
     layers[#layers + 1] = OffsetContainer:new{
         x_off = inset, y_off = inset,
         fixed_frame(math.max(1, width - inset * 2), math.max(1, height - inset * 2), {
-            bordersize = math.max(UiScale.line("thin"), 1),
-            radius = UiScale.radius(9, 6, 15),
+            bordersize = math.max(Skin.line("thin"), 1),
+            radius = Skin.radius(9, 6, 15),
             background = Blitbuffer.COLOR_WHITE,
         }, VerticalGroup:new{
             align = "center",
@@ -394,8 +399,8 @@ local function shelf_folder_card(folder, width, height, callback)
         },
     }
     local card = fixed_frame(width, height, {
-        bordersize = UiScale.line("thin"), padding = UiScale.dp(4, 3, 7),
-        radius = UiScale.radius(8, 6, 13), background = Blitbuffer.COLOR_WHITE,
+        bordersize = Skin.line("thin"), padding = UiScale.dp(4, 3, 7),
+        radius = Skin.radius(8, 6, 13), background = Blitbuffer.COLOR_WHITE,
         color = Blitbuffer.COLOR_GRAY,
     }, body)
     return tappable(width, height, card, function(anchor)
@@ -541,8 +546,8 @@ local function action_button(entry, width, height)
         child[#child + 1] = OffsetContainer:new{
             x_off = math.max(0, width - badge_w - UiScale.dp(4, 3, 7)), y_off = UiScale.dp(2, 1, 4),
             fixed_frame(badge_w, badge_h, {
-                bordersize = UiScale.line("thin"),
-                radius = UiScale.radius(4, 3, 7),
+                bordersize = Skin.line("thin"),
+                radius = Skin.radius(4, 3, 7),
                 padding = UiScale.dp(1, 1, 3),
                 background = Blitbuffer.COLOR_WHITE,
             }, TextWidget:new{text = tostring(entry.badge), face = face("smallinfofont", 9, 11), bold = true}),
@@ -564,8 +569,8 @@ local function action_bar(actions, width, height)
     local layered = OverlapGroup:new{dimen = Geom:new{w = width, h = height}, allow_mirroring = false}
     layered[#layered + 1] = row
     layered[#layered + 1] = OffsetContainer:new{
-        x_off = 0, y_off = math.max(0, height - UiScale.line("thin")),
-        LineWidget:new{background = Blitbuffer.COLOR_GRAY, dimen = Geom:new{w = width, h = UiScale.line("thin")}},
+        x_off = 0, y_off = math.max(0, height - Skin.line("thin")),
+        LineWidget:new{background = Blitbuffer.COLOR_GRAY, dimen = Geom:new{w = width, h = Skin.line("thin")}},
     }
     return layered
 end
@@ -591,8 +596,8 @@ local function category_tabs(tabs, width, height, on_more)
             local line_w = math.max(28, math.floor(item_w * .54))
             item[#item + 1] = OffsetContainer:new{
                 x_off = math.floor((item_w - line_w) / 2),
-                y_off = math.max(0, height - UiScale.line("thick")),
-                LineWidget:new{background = Blitbuffer.COLOR_BLACK, dimen = Geom:new{w = line_w, h = UiScale.line("thick")}},
+                y_off = math.max(0, height - Skin.line("thick")),
+                LineWidget:new{background = Blitbuffer.COLOR_BLACK, dimen = Geom:new{w = line_w, h = Skin.line("thick")}},
             }
         end
         row[#row + 1] = tappable(item_w, height, item, tab.on_tap)
@@ -619,6 +624,88 @@ local function empty_section(width, height, text, callback)
         })), callback)
 end
 
+
+-- Bottom three-tab bar (书架/书城/我的). Selected tab: bold + thick underline
+-- (grayscale emphasis; no color on e-ink).
+local function tab_bar(tabs, width, height)
+    tabs = tabs or {}
+    if #tabs == 0 then return fixed_frame(width, height, {background = Blitbuffer.COLOR_WHITE}) end
+    local item_w = math.max(1, math.floor(width / #tabs))
+    local row = HorizontalGroup:new{align = "center"}
+    for _, tab in ipairs(tabs) do
+        local label = tostring(tab.title or "")
+        local item = OverlapGroup:new{dimen = Geom:new{w = item_w, h = height}, allow_mirroring = false}
+        item[#item + 1] = Ui.textbox(label, math.max(1, item_w - 8), height,
+            face("cfont", 13.4, 18), {
+                bold = tab.selected == true, alignment = "center", halign = "center",
+                fgcolor = tab.selected == true and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY,
+            })
+        if tab.selected then
+            local line_w = math.max(24, math.floor(item_w * .4))
+            item[#item + 1] = OffsetContainer:new{
+                x_off = math.floor((item_w - line_w) / 2),
+                y_off = math.max(0, height - Skin.line("thick")),
+                LineWidget:new{background = Blitbuffer.COLOR_BLACK, dimen = Geom:new{w = line_w, h = Skin.line("thick")}},
+            }
+        end
+        row[#row + 1] = tappable(item_w, height, item, tab.on_tap)
+    end
+    local layered = OverlapGroup:new{dimen = Geom:new{w = width, h = height}, allow_mirroring = false}
+    layered[#layered + 1] = fixed_frame(width, height, {bordersize = 0, background = Blitbuffer.COLOR_WHITE}, row)
+    layered[#layered + 1] = OffsetContainer:new{
+        x_off = 0, y_off = 0,
+        LineWidget:new{background = Blitbuffer.COLOR_GRAY, dimen = Geom:new{w = width, h = Skin.line("thin")}},
+    }
+    return layered
+end
+
+-- Generic list/menu row: [icon] title + subtitle + chevron. Shared skeleton
+-- with the reader control center rows (miuread.ui_rows) so the external and
+-- reading surfaces stay visually identical.
+local function entry_row(title, subtitle, width, height, on_tap, icon_text)
+    local inner = UiRows.build({
+        icon = icon_text or "",
+        label = title or "",
+        subtitle = subtitle or "",
+        arrow = true,
+        callback = on_tap,
+    }, width, height)
+    local card = fixed_frame(width, height, {bordersize = 0, background = Blitbuffer.COLOR_WHITE}, inner)
+    if on_tap then return tappable(width, height, card, on_tap) end
+    return card
+end
+
+-- Reading-duration card (今日 / 本周), WeRead "我的" style. Optional
+-- right-aligned hint line (e.g. "阅读周报 ›"). Data source note: local
+-- KOReader statistics, not the WeRead cloud counter (see design doc A16).
+local function duration_card(today_text, week_text, width, height, on_tap, hint)
+    local gap = UiScale.dp(8, 6, 14)
+    local half = math.max(1, math.floor((width - gap) / 2))
+    local hint_h = hint and hint ~= "" and math.max(UiScale.dp(18, 15, 24), math.floor(height * .24)) or 0
+    local cell_h = math.max(1, height - hint_h)
+    local cell = function(label, value)
+        local box = VerticalGroup:new{align = "center"}
+        box[#box + 1] = Ui.textbox(tostring(value or "—"), half, math.floor(cell_h * .55),
+            face("cfont", 14.5, 19), {bold = true, alignment = "center", halign = "center", fgcolor = Blitbuffer.COLOR_BLACK})
+        box[#box + 1] = Ui.text(tostring(label or ""), half, math.max(1, math.floor(cell_h * .38)),
+            face("smallinfofont", 9.6, 13), {bold = true, alignment = "center", halign = "center", fgcolor = Blitbuffer.COLOR_DARK_GRAY})
+        return box
+    end
+    local row = HorizontalGroup:new{align = "center"}
+    row[#row + 1] = cell("今日阅读", today_text)
+    row[#row + 1] = HorizontalSpan:new{width = gap}
+    row[#row + 1] = cell("本周阅读", week_text)
+    local body = VerticalGroup:new{align = "center"}
+    body[#body + 1] = row
+    if hint_h > 0 then
+        body[#body + 1] = Ui.textbox(tostring(hint), width, hint_h,
+            face("smallinfofont", 9.2, 13), {bold = true, alignment = "right", halign = "right", fgcolor = Blitbuffer.COLOR_DARK_GRAY})
+    end
+    local card = fixed_frame(width, height, {bordersize = 0, background = Blitbuffer.COLOR_WHITE}, body)
+    if on_tap then return tappable(width, height, card, on_tap) end
+    return card
+end
+
 local Cards = {
     face = face,
     background = background,
@@ -639,5 +726,8 @@ local Cards = {
     action_bar = action_bar,
     category_tabs = category_tabs,
     empty_section = empty_section,
+    tab_bar = tab_bar,
+    entry_row = entry_row,
+    duration_card = duration_card,
 }
 return Cards

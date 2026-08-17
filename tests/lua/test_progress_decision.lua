@@ -90,4 +90,29 @@ function T.test_conflict_policy()
     B.eq(should_adopt, false, "unknown mode falls back to ask")
 end
 
+function T.test_choose_source_prefers_newer()
+    local web = { percent = 40, updated_at = 100, source = "web_cookie" }
+    local agent = { percent = 80, updated_at = 200, source = "agent_gateway" }
+    B.eq(PD.choose_source(web, agent), agent, "newer agent wins")
+    agent.updated_at = 50
+    B.eq(PD.choose_source(web, agent), web, "newer web wins")
+end
+
+function T.test_choose_source_tie_prefers_official()
+    local web = { percent = 40, updated_at = 100, source = "web_cookie" }
+    local agent = { percent = 80, updated_at = 100, source = "agent_gateway" }
+    B.eq(PD.choose_source(web, agent), agent, "equal timestamps prefer official gateway")
+    web.updated_at = nil
+    agent.updated_at = nil
+    B.eq(PD.choose_source(web, agent), agent, "missing timestamps prefer official gateway")
+end
+
+function T.test_choose_source_missing_side()
+    local agent = { percent = 50 }
+    B.eq(PD.choose_source(nil, agent), agent, "nil web returns agent")
+    local web = { percent = 50 }
+    B.eq(PD.choose_source(web, nil), web, "nil agent returns web")
+    B.eq(PD.choose_source(nil, nil), nil, "both nil returns nil")
+end
+
 return T

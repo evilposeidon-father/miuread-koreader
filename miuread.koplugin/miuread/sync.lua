@@ -5,6 +5,7 @@ local FFIUtil = require("ffi/util")
 local Json = require("miuread.json")
 local Config = require("miuread.config")
 local ReadReportService = require("miuread.read_report_service")
+local ReadTimeLedger = require("miuread.read_time_ledger")
 local Protocol = require("miuread.protocol")
 local Http = require("miuread.http")
 local ReadReportWorker = require("miuread.read_report_adapter")
@@ -14,12 +15,18 @@ local SourcePosition = require("miuread.source_position")
 local ProgressDecision = require("miuread.progress_decision")
 local ReportDaemon = require("miuread.report_daemon")
 local U = require("miuread.util")
+local OpLog = require("miuread.oplog")
 
 local Sync = {}
 Sync.__index = Sync
 local legacy_daemon_retired = false
 
 local CONTEXT_MAX_AGE = 15 * 60
+-- Keepalive renewal: silently renew the WeChat web session on book open and
+-- on a daily timer (with jitter) so server-side TTL recycling stops forcing
+-- the user to re-scan the QR code every few days.
+local KEEPALIVE_INTERVAL = 24 * 60 * 60
+local KEEPALIVE_JITTER = 30 * 60
 local READ_REPORT_SERVICE_VERSION = 15
 local FIRST_REPORT_DELAY = 10
 local FINAL_REPORT_MIN_SECONDS = 10
@@ -953,8 +960,9 @@ function Sync:remote(book_id, callback, options)
         if not result.ok or type(result.value)~="table" then
             self.last_error = result.error or "remote progress unavailable"
             logger.warn("[MiuRead][Sync] remote progress failed", tostring(self.last_error))
-            if Http.is_auth_error(self.last_error) and self.host.on_auth_required then
-                pcall(self.host.on_auth_required,self.host,"progress",self.last_error)
+            OpLog.push{ cat="sync", op="progress_pull", status="fail", code=tostring(self.last_error) }
+            if Http.is_auth_error(self.last_error) then
+                Http.notify_auth_error(self.host, "progress", self.last_error)
             end
             callback(nil, self.last_error)
             return
@@ -965,8 +973,9 @@ function Sync:remote(book_id, callback, options)
         local remote=choose_remote_progress(web,agent,threshold)
         if not remote then
             self.last_error=tostring(value.web_error or value.agent_error or "remote progress unavailable")
-            if Http.is_auth_error(self.last_error) and self.host.on_auth_required then
-                pcall(self.host.on_auth_required,self.host,"progress",self.last_error)
+            OpLog.push{ cat="sync", op="progress_pull", status="fail", code=tostring(self.last_error), detail="no remote source" }
+            if Http.is_auth_error(self.last_error) then
+                Http.notify_auth_error(self.host, "progress", self.last_error)
             end
             callback(nil,self.last_error)
             return
@@ -1046,6 +1055,76 @@ function Sync:_save_local_snapshot(book_id,position)
     self:_defer_session_flush(.8)
 end
 
+-- Decide whether a keepalive renewal is due. Pure logic, unit-tested.
+-- auth: store:auth() result (may lack the health sub-table).
+-- Returns (true) when due, or (false, reason).
+function Sync._keepalive_due(auth, now, interval, force)
+    if type(auth) ~= "table" then return false, "unavailable" end
+    if tostring(auth.api_key or "") == "" or next(auth.cookies or {}) == nil then
+        return false, "not_logged_in"
+    end
+    if force == true then return true end
+    local health = type(auth.health) == "table" and auth.health or {}
+    local last = tonumber(health.last_renewal_at or 0) or 0
+    if last <= 0 then return true end -- never renewed before: always due
+    if now - last < (tonumber(interval) or KEEPALIVE_INTERVAL) then
+        return false, "throttled"
+    end
+    return true
+end
+
+-- Silent session keepalive: renews the web session (Reader:_recover_login_session
+-- -> /web/login/renewal) when due, without interrupting the reader. Success
+-- extends the session lifetime; a server-side rejection is written back to the
+-- auth health so the home screen stops claiming "已登录".
+function Sync:maybe_keepalive_login(force)
+    if not self.store or not self.reader then return false, "unavailable" end
+    local due, reason = Sync._keepalive_due(self.store:auth(), os.time(), KEEPALIVE_INTERVAL, force)
+    if not due then return false, reason end
+    if self.auth_recovery_busy then return false, "busy" end
+    local store = self.store
+    local reader = self.reader
+    UIManager:scheduleIn(1.2, function()
+        local called, ok, detail = pcall(reader._recover_login_session, reader)
+        local success = called and ok == true
+        -- Record the attempt time even on failure so a device that stayed
+        -- offline does not retry every book open.
+        local auth = store:auth()
+        local health = type(auth.health) == "table" and auth.health or {}
+        health.last_renewal_at = os.time()
+        auth.health = health
+        pcall(store.save_auth, store, auth)
+        if not success then
+            local err = called and detail or ok
+            OpLog.push{ cat="auth", op="keepalive", status="fail",
+                code=U.first_line(tostring(err or "renewal rejected"), 120) }
+            logger.warn("[MiuRead][Sync] login keepalive failed", "error=", tostring(err or "unknown"))
+            -- The server rejected the renewal: the session is really gone.
+            Http.notify_auth_error(self.host, "read_report", err or "login keepalive failed")
+        else
+            OpLog.push{ cat="auth", op="keepalive", status="ok" }
+            logger.info("[MiuRead][Sync] login keepalive renewed")
+            if self.host and self.host.on_auth_channel_ok then
+                pcall(self.host.on_auth_channel_ok, self.host, "read_report")
+            end
+        end
+    end)
+    return true, "scheduled"
+end
+
+-- Daily keepalive loop (24h + jitter). Single-fire UIManager timers, so a
+-- suspend/resume cycle never stacks callbacks.
+function Sync:schedule_login_keepalive_loop()
+    local self_ref = self
+    local function tick()
+        self_ref:maybe_keepalive_login(false)
+        local jitter = math.floor(math.random() * KEEPALIVE_JITTER)
+        UIManager:scheduleIn(KEEPALIVE_INTERVAL + jitter, tick)
+    end
+    UIManager:scheduleIn(8, tick)
+    return true
+end
+
 function Sync:_recover_auth_once(channel,error,on_done,force)
     local now=os.time()
     if self.auth_recovery_busy or (not force and now-(tonumber(self.auth_recovery_at) or 0)<60) then
@@ -1065,9 +1144,10 @@ function Sync:_recover_auth_once(channel,error,on_done,force)
             local reason=called and detail or renewed
             logger.warn("[MiuRead][Sync] parent login recovery failed","channel=",tostring(channel),
                 "error=",U.first_line(reason or error,180))
-            if not force and self.host.on_auth_required then
-                pcall(self.host.on_auth_required,self.host,channel,reason or error)
-            end
+            -- Notify even when force=true (manual repair path): the host must
+            -- write back auth.health so logged_in() reflects the server-side
+            -- session loss instead of keeping the home screen on "已登录".
+            Http.notify_auth_error(self.host, channel, reason or error)
         end
         if on_done then on_done(success,detail) end
     end)
@@ -1186,7 +1266,7 @@ function Sync:_record_report_issue(book_id, kind, err, options)
         self.state="waiting"
         self.last_stage="登录状态需要重新验证"
         self:_clear_noncontext_repair_flag(book_id,session,"authentication_failure")
-        if self.host.on_auth_required then pcall(self.host.on_auth_required,self.host,"read_report",err) end
+        Http.notify_auth_error(self.host, "read_report", err)
         return false
     end
     if kind=="transport" or kind=="server" then
@@ -1330,6 +1410,12 @@ function Sync:repair_current(callback)
         kind=self:_normalize_report_error_kind(kind or (err:lower():find("chapter",1,true) and "context" or "server"),err)
         local repair_required=self:_mark_repair_required(book_id,kind,err,true)==true
         self.state=repair_required and "repair_required" or "waiting"
+        -- Repair-path auth failures must reach the host health marker too,
+        -- otherwise logged_in() keeps reporting "已登录" while silent sync
+        -- shows 登录验证失败 after a renewal rejection.
+        if kind=="authentication" then
+            Http.notify_auth_error(self.host, "read_report", err)
+        end
         if callback then callback(false,err,nil,value) end
     end
 
@@ -1611,6 +1697,7 @@ function Sync:upload(elapsed, callback, options)
             local kind=Http.is_auth_error(self.last_error) and "authentication"
                 or ((Http.is_network_error and Http.is_network_error(self.last_error)) and "transport" or "context")
             logger.warn("[MiuRead][ReadReport] worker failed", tostring(self.last_error))
+            OpLog.push{ cat="read_report", op="worker", status="fail", code=tostring(self.last_error) }
             self:_record_report_issue(book_id,kind,self.last_error,{
                 force_repair_required=options.repair==true,
                 suppress_prompt=options.repair==true,
@@ -1762,6 +1849,9 @@ function Sync:upload(elapsed, callback, options)
             self.session_uploads = self.session_uploads + 1
             self.last_upload = completed_at
             patch.last_upload=self.last_upload
+            if elapsed and elapsed > 0 then
+                self:_ledger_add(elapsed)
+            end
             logger.info("[MiuRead][ReadReport] success", "count=", tostring(self.session_uploads),
                 "book=", tostring(book_id), "elapsed=", tostring(elapsed or 0),
                 "progress=", tostring(position.progress), "path=", tostring(value.path),
@@ -1782,6 +1872,37 @@ function Sync:upload(elapsed, callback, options)
         return false
     end
     return true
+end
+
+-- Read-time ledger accumulation shared by the direct upload path and the
+-- daemon accepted consumer (the production path). Kept in memory and flushed
+-- at most every 60s: store:set() does a full preferences flush and must not
+-- run on every interval upload (fluency review). A late flush is scheduled so
+-- a session end cannot lose the last minute.
+function Sync:_ledger_add(elapsed)
+    elapsed = tonumber(elapsed) or 0
+    if elapsed <= 0 then return end
+    logger.info("[MiuRead][Ledger] add", "elapsed=", tostring(elapsed),
+        "due=", tostring(ReadTimeLedger.flush_due(self._read_time_ledger_flush_at)),
+        "pending=", tostring(self._read_time_ledger_pending ~= nil))
+    local saved_ledger = self._read_time_ledger_pending
+        or self.store:get("read_time_ledger") or {}
+    saved_ledger = ReadTimeLedger.add(saved_ledger, elapsed)
+    self._read_time_ledger_pending = saved_ledger
+    if ReadTimeLedger.flush_due(self._read_time_ledger_flush_at) then
+        self.store:set("read_time_ledger", saved_ledger)
+        self._read_time_ledger_flush_at = os.time()
+    elseif not self._read_time_ledger_flush_task then
+        self._read_time_ledger_flush_task = true
+        UIManager:scheduleIn(60, function()
+            self._read_time_ledger_flush_task = nil
+            local pending = self._read_time_ledger_pending
+            if pending and ReadTimeLedger.flush_due(self._read_time_ledger_flush_at) then
+                self.store:set("read_time_ledger", pending)
+                self._read_time_ledger_flush_at = os.time()
+            end
+        end)
+    end
 end
 
 function Sync:upload_progress(callback, options)
@@ -1857,55 +1978,19 @@ end
 
 local daemon_stamp = ReportDaemon.stamp
 
-local process_ffi
-local function process_helpers()
-    if process_ffi ~= nil then return process_ffi or nil end
-    local ok, ffi = pcall(require, "ffi")
-    if not ok then process_ffi = false; return nil end
-    pcall(function()
-        ffi.cdef[[
-            int getpid(void);
-            int kill(int pid, int sig);
-        ]]
-    end)
-    process_ffi = ffi
-    return ffi
-end
-
-local function current_pid()
-    local ffi = process_helpers()
-    if not ffi then return nil end
-    local ok, pid = pcall(function() return tonumber(ffi.C.getpid()) end)
-    return ok and pid or nil
-end
-
+-- Process/file plumbing is owned by miuread.report_daemon (single source).
+-- These thin aliases keep the sync.lua call sites unchanged.
+local function current_pid() return ReportDaemon.current_pid() end
 local function process_alive(pid)
-    pid = tonumber(pid)
-    if not pid or pid <= 1 then return false end
-    local ffi = process_helpers()
-    if not ffi then return true end
-    local ok, result = pcall(function() return ffi.C.kill(pid, 0) end)
-    return ok and result == 0
+    -- Without FFI liveness cannot be probed; assume alive so a stale daemon
+    -- is retried instead of being spuriously deleted.
+    local alive = ReportDaemon.pid_alive(pid)
+    if alive == nil then return true end
+    return alive
 end
-
-local function read_json_file(path)
-    local raw = U.read_file(path, true)
-    if not raw then return nil end
-    local ok, value = pcall(Json.decode, raw)
-    if ok and type(value) == "table" then return value end
-end
-
-local function remove_lock_dir(path)
-    local ok, lfs = pcall(require, "lfs")
-    if ok and lfs and type(lfs.rmdir) == "function" then pcall(lfs.rmdir, path) end
-end
-
-local function acquire_lock_dir(path)
-    local ok, lfs = pcall(require, "lfs")
-    if not ok or not lfs or type(lfs.mkdir) ~= "function" then return true end
-    local made = lfs.mkdir(path)
-    return made == true
-end
+local function read_json_file(path) return ReportDaemon.read_json(path) end
+local function remove_lock_dir(path) return ReportDaemon.remove_lock(path) end
+local function acquire_lock_dir(path) return ReportDaemon.acquire_lock(path) end
 
 function Sync:_retire_legacy_daemon()
     -- Stop workers created by earlier service layouts before starting v10.
@@ -2271,6 +2356,9 @@ function Sync:_import_daemon_status(force)
     end
 
     if status.accepted then
+        if tonumber(status.elapsed_seconds or 0) > 0 then
+            self:_ledger_add(status.elapsed_seconds)
+        end
         self.pending_report_elapsed=0
         self.pending_report_status_at=tonumber(status.completed_at) or os.time()
         self.state = daemon.active and "waiting" or "stopped"
@@ -2282,6 +2370,9 @@ function Sync:_import_daemon_status(force)
         self.failure_notified = false
         if self.host.on_auth_channel_ok then pcall(self.host.on_auth_channel_ok,self.host,"read_report") end
         if status_book_id ~= "" then
+            -- Deferred flush: accepted consumers run on the interval path and
+            -- must not full-file flush preferences on every upload (fluency
+            -- review). _persist_daemon_session below flushes when appropriate.
             self.store:save_session(status_book_id, {
                 last_error=false,
                 last_error_kind=false,
@@ -2293,7 +2384,7 @@ function Sync:_import_daemon_status(force)
                 last_upload=self.last_upload,
                 last_elapsed=tonumber(status.elapsed_seconds),
                 last_report_reason=final_flush and tostring(status.flush_reason or "stop") or "interval",
-            })
+            }, false)
         end
         if not final_flush and self.host.on_read_report_interval_success then
             pcall(self.host.on_read_report_interval_success,self.host,status)
@@ -2316,6 +2407,12 @@ function Sync:_import_daemon_status(force)
         end
         self:_persist_daemon_session(force or final_flush, status_book_id ~= "" and status_book_id or nil)
         if final_flush and stamp then self.store:mark_read_report_consumed(stamp) end
+        if (force or final_flush) and self._read_time_ledger_pending then
+            logger.info("[MiuRead][Ledger] final flush",
+                "book=", tostring(status_book_id), "final=", tostring(final_flush))
+            self.store:set("read_time_ledger", self._read_time_ledger_pending)
+            self._read_time_ledger_flush_at = os.time()
+        end
     elseif status.uncertain==true or status.state=="unconfirmed" then
         self.state = daemon.active and "waiting" or "stopped"
         self.consecutive_failures=0
@@ -2369,6 +2466,8 @@ function Sync:_import_daemon_status(force)
                 "book=", status_book_id, "elapsed=", tostring(status.elapsed_seconds or "-"),
                 "reason=", tostring(status.flush_reason or "stop"),
                 "kind=",error_kind,"error=", self.last_error)
+            OpLog.push{ cat="read_report", op="upload", status="fail", code=tostring(self.last_error),
+                detail="flush=" .. tostring(status.flush_reason or "stop") }
             daemon.final_flush_pending = false
             if not daemon.active then daemon.book_id = nil end
         else
@@ -2376,6 +2475,8 @@ function Sync:_import_daemon_status(force)
                 "kind=",error_kind,"retry_delay=",tostring(status.retry_delay or 0),
                 "failures=",tostring(self.consecutive_failures),"repair=",tostring(repair_required),
                 "error=",self.last_error)
+            OpLog.push{ cat="read_report", op="service", status="fail", code=tostring(self.last_error),
+                detail="kind=" .. tostring(error_kind) }
             if error_kind=="authentication" and not repair_required then
                 self:_recover_auth_once("read_report",self.last_error,function(ok_recover)
                     if ok_recover and not self.suspended and self:record() then self:start("auth_recovered") end
@@ -2857,12 +2958,14 @@ function Sync:_resolve_reader_record(generation,attempt)
         else
             if result and result.ok~=true then
                 logger.warn("[MiuRead][Sync] EPUB identity worker failed",tostring(result.error or "unknown"))
+                OpLog.push{ cat="sync", op="epub_identity", status="fail", code=tostring(result.error or "unknown") }
             end
             self:_record_missing(path,attempt)
         end
     end,25)
     if not started then
         logger.warn("[MiuRead][Sync] EPUB identity worker unavailable",tostring(err))
+        OpLog.push{ cat="sync", op="epub_identity", status="fail", code=tostring(err) }
         self:_record_missing(path,attempt)
     end
 end

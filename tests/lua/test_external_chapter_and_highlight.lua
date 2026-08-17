@@ -230,6 +230,34 @@ function T.test_progress_anchor_helpers()
     })
     B.eq(#dupes, 1, "only prefixed anchor bookmarks are duplicates")
     B.eq(dupes[1].remote_id, "b1")
+    B.eq(dupes[1].chapter_uid, "", "no chapterUid keeps empty")
+end
+
+function T.test_find_anchor_duplicates_keeps_chapter_uid()
+    local dupes = AnnotationSync.find_anchor_duplicates({
+        { bookmarkId = "b1", markText = "觅阅进度锚点：A", chapterUid = "c1" },
+        { bookmarkId = "b2", markText = "觅阅进度锚点：B", chapter_uid = "c2" },
+        { bookmarkId = "b3", markText = "觅阅进度锚点：C" },
+    })
+    B.eq(#dupes, 3, "all prefixed anchors found")
+    B.eq(dupes[1].chapter_uid, "c1", "chapterUid preserved")
+    B.eq(dupes[2].chapter_uid, "c2", "chapter_uid preserved")
+    B.eq(dupes[3].chapter_uid, "", "missing chapter stays empty")
+end
+
+function T.test_anchor_delete_succeeded()
+    -- pcall error / HTTP failure
+    B.ok(AnnotationSync.anchor_delete_succeeded(false, "timeout") == false, "transport failure")
+    -- Business rejection: errCode / succ=0 / ok=false
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, { errCode = -2010 }) == false, "errCode rejected")
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, { succ = 0 }) == false, "succ=0 rejected")
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, { ok = false }) == false, "ok=false rejected")
+    -- Accepted shapes
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, true) == true, "boolean true accepted")
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, { succ = 1 }) == true, "succ=1 accepted")
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, { ok = true }) == true, "ok=true accepted")
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, {}) == true, "empty 2xx accepted")
+    B.ok(AnnotationSync.anchor_delete_succeeded(true, nil) == true, "nil body accepted")
 end
 
 return T

@@ -98,4 +98,20 @@ function ProgressDecision.conflict_policy(mode, cmp, remote)
     return true, remotep
 end
 
+-- Picks the authoritative cloud source when the web-cookie and official
+-- gateway channels disagree. Prefers the source with the newer update time;
+-- ties (or missing timestamps) prefer the official gateway channel, which is
+-- the more trustworthy server-side record. Returns the chosen source table
+-- (with .source set) or nil when neither exists.
+function ProgressDecision.choose_source(web, agent)
+    if not web then return agent end
+    if not agent then return web end
+    local web_at = tonumber(web.updated_at or 0) or 0
+    local agent_at = tonumber(agent.updated_at or 0) or 0
+    if web_at ~= agent_at and web_at > 0 and agent_at > 0 then
+        return web_at > agent_at and web or agent
+    end
+    return agent
+end
+
 return ProgressDecision

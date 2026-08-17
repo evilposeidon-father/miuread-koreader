@@ -624,6 +624,17 @@ function Reader:_recover_login_session()
             "vid_unchanged=", tostring(before_vid == "" or before_vid == tostring(result.vid or "")))
         return true, result
     end
+    local reason = tostring(result or "")
+    -- Server-side rejections (HTTP 401/403, succ=false, login-page responses)
+    -- mean the web session can no longer be used. Normalize them to the shared
+    -- auth marker so is_auth_error() and logged_in() see the loss and the home
+    -- screen stops claiming "已登录" after a silent-sync failure. Network and
+    -- concurrent-login errors stay untouched to avoid false expiry.
+    if reason:find("HTTP 40", 1, true)
+        or reason:find("未接受本次登录续期", 1, true)
+        or Http.is_auth_error(reason) then
+        result = Http.auth_error_message(-2012, reason)
+    end
     logger.warn("[MiuRead][Reader] login session recovery failed", tostring(result))
     return false, result
 end

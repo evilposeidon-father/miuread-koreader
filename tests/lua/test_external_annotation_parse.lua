@@ -45,4 +45,67 @@ function T.test_clean_book_keyword()
     B.eq(EP.clean_book_keyword("普通书名.epub"), "普通书名", "no suffix")
 end
 
+function T.test_merge_records_by_id_dedupes_collisions()
+    local primary = {
+        { id = "bk:1:r1", text = "a" },
+        { id = "bk:1:r2", text = "b" },
+    }
+    local extra = {
+        { id = "bk:1:r2", text = "b-dup" },
+        { id = "bk:2:r3", text = "c" },
+    }
+    local out = EP.merge_records_by_id(primary, extra)
+    B.eq(#out, 3, "collision dropped, unique appended")
+    B.eq(out[1].text, "a")
+    B.eq(out[2].text, "b", "primary wins on collision")
+    B.eq(out[3].text, "c")
+end
+
+function T.test_merge_records_by_id_appends_idless()
+    local out = EP.merge_records_by_id({ { id = "" } }, { { id = "" }, { id = "x:1" } })
+    B.eq(#out, 3, "id-less records always appended")
+end
+
+function T.test_merge_records_by_id_handles_nil()
+    B.eq(#EP.merge_records_by_id(nil, { { id = "a" } }), 1, "nil primary")
+    B.eq(#EP.merge_records_by_id({ { id = "a" } }, nil), 1, "nil extra")
+    B.eq(#EP.merge_records_by_id(nil, nil), 0, "both nil")
+end
+
+function T.test_normalize_title()
+    B.eq(EP.normalize_title("三体-纯净版"), "三体", "edition suffix stripped")
+    B.eq(EP.normalize_title("三体（全集）"), "三体全集", "punct removed, 全集 kept")
+    B.eq(EP.normalize_title(" 三体 "), "三体", "whitespace removed")
+    B.eq(EP.normalize_title("三体"), EP.normalize_title("三体-纯净版"), "edition equals base")
+    B.eq(EP.normalize_title("Shan Hai Jing"), "shanhaijing", "lowercased ascii")
+end
+
+function T.test_pick_search_match_exact_title()
+    local candidates = {
+        { book_id = "b1", title = "三体", author = "刘慈欣" },
+        { book_id = "b2", title = "三体2：黑暗森林", author = "刘慈欣" },
+    }
+    B.eq(EP.pick_search_match(candidates, "三体-纯净版"), candidates[1], "exact title match after cleanup")
+    B.eq(EP.pick_search_match(candidates, "三体"), candidates[1], "plain title")
+    B.eq(EP.pick_search_match(candidates, "三体2：黑暗森林"), candidates[2], "full-width colon title")
+    B.eq(EP.pick_search_match(candidates, "三体2"), nil, "subtitle-less keyword never false-matches")
+end
+
+function T.test_pick_search_match_ambiguous_is_nil()
+    local candidates = {
+        { book_id = "b1", title = "三体", author = "甲出版社" },
+        { book_id = "b2", title = "三体", author = "乙出版社" },
+    }
+    B.eq(EP.pick_search_match(candidates, "三体"), nil, "two same-title editions never auto-bind")
+    B.eq(EP.pick_search_match(candidates, "三体", "刘慈欣"), nil, "author mismatch keeps ambiguity")
+    B.eq(EP.pick_search_match(candidates, "三体", "甲出版社"), candidates[1], "author disambiguates")
+end
+
+function T.test_pick_search_match_no_match()
+    B.eq(EP.pick_search_match({ { book_id = "b1", title = "活着" } }, "三体"), nil, "different title")
+    B.eq(EP.pick_search_match({}, "三体"), nil, "no candidates")
+    B.eq(EP.pick_search_match(nil, "三体"), nil, "nil candidates")
+    B.eq(EP.pick_search_match({ { book_id = "b1", title = "三体" } }, ""), nil, "empty title")
+end
+
 return T

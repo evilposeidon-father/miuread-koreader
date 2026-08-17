@@ -136,10 +136,35 @@ function AnnotationSync.find_anchor_duplicates(cloud_rows)
         local mark_text = scalar(row.markText or row.bookmarkText or row.rangeText or row.abstract or "")
         if mark_text:sub(1, #ANCHOR_MARK_PREFIX) == ANCHOR_MARK_PREFIX then
             local rid = bookmark_remote_id(row)
-            if rid ~= "" then out[#out + 1] = { remote_id = rid } end
+            if rid ~= "" then
+                -- Keep each anchor's own chapterUid: deleting a bookmark with
+                -- the wrong chapter context is silently rejected by WeRead.
+                out[#out + 1] = {
+                    remote_id = rid,
+                    chapter_uid = tostring(row.chapterUid or row.chapter_uid or ""),
+                }
+            end
         end
     end
     return out
+end
+
+-- True only when the annotation-write call really removed the remote bookmark.
+-- pcall(remove_bookmark, ...) returns (no_lua_error, response): a completed
+-- HTTP request can still carry a business error (errCode/succ=0), which must
+-- NOT be treated as a deletion.
+function AnnotationSync.anchor_delete_succeeded(ok_call, result)
+    if ok_call ~= true then return false end
+    if result == true then return true end
+    if type(result) ~= "table" then
+        -- Empty/unparsed 2xx body counts as accepted.
+        return result == nil or tostring(result) ~= ""
+    end
+    if result.ok == false then return false end
+    local err_code = tonumber(result.errCode or result.err_code or result.errorCode or result.code)
+    if err_code ~= nil and err_code ~= 0 then return false end
+    if result.succ ~= nil and tonumber(result.succ) ~= 1 then return false end
+    return true
 end
 
 local function find_review_match(records, range_key, content, remote_id)
@@ -1217,36 +1242,53 @@ function AnnotationSync:sync_book(book, record, options)
                     row.coord_verify = effective_verify
 
                     if anchor_update then
-                        -- The progress anchor is one moving bookmark. Delete
-                        -- the previous remote bookmark before uploading the new
-                        -- position so the official bookmark list never grows.
-                        if row.remote_id ~= "" then
-                            local ok_del, del_err = pcall(self.api.remove_bookmark, self.api, row.remote_id, {
-                                bookId=book_id, chapterUid=row.chapter_uid,
+                        -- The progress anchor is ONE moving bookmark. Remove
+                        -- every cloud bookmark with the MiuRead prefix (the
+                        -- previous position plus legacy duplicates) using each
+                        -- anchor's own chapterUid, and only proceed to upload
+                        -- when the removals actually succeeded. Deleting with
+                        -- the current chapter is silently rejected by WeRead,
+                        -- and a treated-as-successful delete is what historically
+                        -- let old anchors survive next to the new one.
+                        local dupes = cloud_bookmarks
+                            and AnnotationSync.find_anchor_duplicates(cloud_bookmarks) or {}
+                        local delete_failed = false
+                        local seen_ids = {}
+                        local function remove_one(rid, chapter_uid)
+                            rid = tostring(rid or "")
+                            if rid == "" or seen_ids[rid] then return end
+                            seen_ids[rid] = true
+                            local ok_call, result = pcall(self.api.remove_bookmark, self.api, rid, {
+                                bookId=book_id, chapterUid=chapter_uid,
                             })
-                            if ok_del then
-                                LocalDB.mark_state(self.store, book_id, row.local_id, "local_only", {
-                                    remote_id="", range_key=located.range,
-                                    chapter_uid=row.chapter_uid, chapter_idx=row.chapter_idx,
-                                })
-                                row.remote_id = ""
-                                stage_log(row, "anchor_delete", true, "previous_anchor_removed")
-                            else
-                                anchor_delete_failed = true
-                                remember_error(row, "delete_pending", del_err, "anchor_delete", {
+                            if not AnnotationSync.anchor_delete_succeeded(ok_call, result) then
+                                delete_failed = true
+                                stage_log(row, "anchor_delete", false,
+                                    "rejected rid=" .. tostring(rid))
+                            end
+                        end
+                        for _, dupe in ipairs(dupes) do
+                            remove_one(dupe.remote_id,
+                                dupe.chapter_uid ~= "" and dupe.chapter_uid or row.chapter_uid)
+                        end
+                        if row.remote_id ~= "" then
+                            remove_one(row.remote_id, row.chapter_uid)
+                        end
+                        if delete_failed then
+                            anchor_delete_failed = true
+                            remember_error(row, "delete_pending", "anchor_delete_rejected",
+                                "anchor_delete", {
                                     remote_id=row.remote_id, range_key=located.range,
                                     chapter_uid=row.chapter_uid, chapter_idx=row.chapter_idx,
                                 })
-                            end
-                        end
-                        if not anchor_delete_failed and cloud_bookmarks then
-                            for _, dupe in ipairs(AnnotationSync.find_anchor_duplicates(cloud_bookmarks)) do
-                                if dupe.remote_id ~= row.remote_id then
-                                    pcall(self.api.remove_bookmark, self.api, dupe.remote_id, {
-                                        bookId=book_id, chapterUid=row.chapter_uid,
-                                    })
-                                end
-                            end
+                        else
+                            LocalDB.mark_state(self.store, book_id, row.local_id, "local_only", {
+                                remote_id="", range_key=located.range,
+                                chapter_uid=row.chapter_uid, chapter_idx=row.chapter_idx,
+                            })
+                            row.remote_id = ""
+                            stage_log(row, "anchor_delete", true,
+                                #dupes > 0 and "previous_anchor_removed" or "anchor_removed")
                         end
                         match, matched_id = false, nil
                     elseif cloud_rows then

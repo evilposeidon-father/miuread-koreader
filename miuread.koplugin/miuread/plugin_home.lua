@@ -127,6 +127,21 @@ function Plugin:_home_preferences()
         home.layout_version=23
         changed=true
     end
+    -- v24: bottom-tab page key. Unknown values are dropped back to shelf so
+    -- the page field can never desynchronize from the view/tab normalization.
+    if old_layout_version<24 then
+        home.layout_version=24
+        changed=true
+    end
+    if home.page~=nil and HomeLayouts.normalize_page(home.page)~=home.page then
+        home.page=nil
+        changed=true
+    end
+    local shelf_sort=tostring(home.shelf_sort or "recent")
+    if shelf_sort~="recent" and shelf_sort~="added" and shelf_sort~="title" and shelf_sort~="author" then
+        home.shelf_sort=nil
+        changed=true
+    end
     if (tonumber(home.performance_defaults_version) or 0)<1 then
         -- Historical performance defaults are no longer allowed to change a
         -- feature switch during ordinary startup. The current local-library
@@ -262,6 +277,25 @@ function Plugin:_home_preferences()
         home.action_layout_version=HOME_ACTION_LAYOUT_VERSION
         changed=true
     end
+    -- Layout v4 removes the retired "sync" shortcut from the home action bar:
+    -- sync is fully automatic and must never ask for attention. Everything
+    -- else the user customized is preserved.
+    if (tonumber(home.action_layout_version) or 0)<HOME_ACTION_LAYOUT_VERSION then
+        home.action_items=type(home.action_items)=="table" and home.action_items or {}
+        home.action_items.sync=nil
+        local seen,cleaned={},{}
+        for _,name in ipairs(home.action_order) do
+            if name~="sync" and HOME_ACTION_ITEM_DEFAULT[name]~=nil and not seen[name] then
+                seen[name]=true; cleaned[#cleaned+1]=name
+            end
+        end
+        for _,key in ipairs(HOME_ACTION_ITEM_ORDER) do
+            if not seen[key] then seen[key]=true; cleaned[#cleaned+1]=key end
+        end
+        home.action_order=cleaned
+        home.action_layout_version=HOME_ACTION_LAYOUT_VERSION
+        changed=true
+    end
     normalize_quick_group("action_items","action_order","action_layout_version",HOME_ACTION_LAYOUT_VERSION,HOME_ACTION_ITEM_ORDER,HOME_ACTION_ITEM_DEFAULT)
     -- Never reintroduce the retired homepage-frontlight key from merged legacy
     -- preferences. Direct frontlight control is rendered by HomeQuickPanel.
@@ -294,6 +328,23 @@ function Plugin:_home_preferences()
             end
             home.panel_order=kept
         end
+        home.panel_layout_version=HOME_PANEL_LAYOUT_VERSION
+        changed=true
+    end
+    -- Layout v4 removes the retired "sync" entry from the pull-down panel.
+    if (tonumber(home.panel_layout_version) or 0)<HOME_PANEL_LAYOUT_VERSION then
+        home.panel_items=type(home.panel_items)=="table" and home.panel_items or {}
+        home.panel_items.sync=nil
+        local seen,kept={},{}
+        for _,name in ipairs(home.panel_order) do
+            if name~="sync" and HOME_PANEL_ITEM_DEFAULT[name]~=nil and not seen[name] then
+                seen[name]=true; kept[#kept+1]=name
+            end
+        end
+        for _,name in ipairs(HOME_PANEL_ITEM_ORDER) do
+            if not seen[name] then seen[name]=true; kept[#kept+1]=name end
+        end
+        home.panel_order=kept
         home.panel_layout_version=HOME_PANEL_LAYOUT_VERSION
         changed=true
     end
@@ -591,7 +642,7 @@ function Plugin:_set_home_mode(use_miuread_home)
         return false
     end
     home.enabled=enabled
-    home.layout_version=23
+    home.layout_version=24
     self:_save_home_preferences(home,preferences)
     if self:_home_enabled()==enabled then
         self:_clear_mode_intro_pending()
@@ -760,7 +811,6 @@ function Plugin:_home_refresh_header_now(force_device,force_sync)
     return HomeView.update_header{
         account_name=self:_home_account_name(),
         wifi_text=self:_home_wifi_text(),
-        sync_text=self:_home_sync_status_text(force_sync==true),
         time_text=self:_display_time("%H:%M"),
         battery_text=self:_home_battery_text(),
     }
@@ -1393,7 +1443,7 @@ function Plugin:_set_home_layout(style)
     style=style=="compact" and "compact" or "desk"
     local home,preferences=self:_home_preferences()
     home.layout_style=style
-    home.layout_version=23
+    home.layout_version=24
     self:_save_home_preferences(home,preferences)
     self:_refresh_home_view(style=="compact" and "已切换到紧凑布局" or "已切换到标准布局","full")
 end
@@ -1548,9 +1598,13 @@ function Plugin:_home_apply_section(section)
         section_cache_key=section,
         section_revision=self:_home_section_cache_revision(section,page),
     }
-    -- Section switching must remain a pure in-memory operation. Metadata,
-    -- cover extraction, local scans and network work are intentionally not
-    -- started here; they are handled on initial home load or explicit refresh.
+    -- Section switching stays in-memory, but the cover/metadata workers must
+    -- still run for the newly shown page: otherwise a cold 已下载 section keeps
+    -- placeholder covers until a full rebuild happens elsewhere.
+    if type(preview) == "table" and #preview > 0 then
+        self:_home_schedule_local_metadata(preview)
+        self:_home_schedule_remote_covers(preview)
+    end
     logger.info("[MiuRead][HomeSwitch] applied",
         "section=",tostring(section),"page=",tostring(page),
         "ms=",tostring(math.floor((os.clock()-started)*1000+.5)))

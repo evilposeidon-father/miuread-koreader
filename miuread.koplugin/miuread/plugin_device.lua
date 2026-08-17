@@ -261,13 +261,13 @@ function Plugin:_home_full_refresh(confirmed)
 end
 
 function Plugin:_home_sleep()
-    if Device:canSuspend() then
-        UIManager:flushSettings()
-        UIManager:suspend()
-        return true
+    if not Device:canSuspend() then
+        self:info("当前设备不支持休眠")
+        return false
     end
-    self:info("当前设备不支持休眠")
-    return false
+    -- 休眠按钮：先同步批注/想法与阅读时长到云端，完成后提示结果再息屏
+    -- （失败/超时也会息屏，见 _sleep_sync_then_suspend）。
+    return self:_sleep_sync_then_suspend()
 end
 
 function Plugin:_home_device_power_busy(action_label)
@@ -388,6 +388,7 @@ function Plugin:maintenance_menu()
             return {
                 {text="生成诊断包",post_text="版本 设备 偏好与下载诊断",callback=function() self:export_diagnostic_bundle() end},
                 {text="同步诊断",sub_item_table_func=function() return self:sync_diagnostics_menu() end},
+                {text="同步设置",sub_item_table_func=function() return self:sync_settings_menu() end},
                 {text="时间诊断",callback=function()
                     local value=self:_time_preferences()
                     local zone=TimeZone.zone(value.zone)
@@ -437,7 +438,6 @@ function Plugin:show_home_quick_panel(more_expanded)
     elseif state.online==true then wifi_detail="已连接"
     else wifi_detail="未连接" end
     local download_detail=tostring(self._home_panel_download_detail or "")
-    local sync_label=self:_home_sync_status_label()
     local bluetooth_state=self:_bluetooth_state(false)
     local definitions={
         wifi={
@@ -460,7 +460,6 @@ function Plugin:show_home_quick_panel(more_expanded)
         koreader_settings={icon="⚙",icon_key="ko-reader",label="KO设置",detail="",callback=function() self:_show_native_koreader_menu() end},
         return_koreader={icon="←",icon_key="return",label="返回KO",detail="",callback=function() self:_home_close_to_native(true) end},
         quit={icon="⏻",icon_key="power",label="退出 KO",detail="",callback=function() self:_quit_koreader() end},
-        sync={icon="⇅",icon_key="sync",label="同步",detail=sync_label,callback=function() self:_sync_shortcut() end,hold_callback=function() self:_sync_shortcut_diagnostics() end},
         miuread_settings={icon="⚙",icon_key="settings",label="觅阅设置",detail="",callback=function() self:_show_home_settings_center() end},
         downloads={icon="⇩",icon_key="download",label="下载",detail=download_detail,
             callback=function(anchor) self:_show_home_download_popup(anchor) end,
@@ -481,7 +480,6 @@ function Plugin:show_home_quick_panel(more_expanded)
 
     local battery=tonumber(state.battery) and (tostring(math.floor(state.battery+.5)).."%") or "未知"
     local status_text=tostring(self._home_panel_status_text or "")
-    if status_text=="" and sync_label:match("^失败") then status_text="同步需要处理" end
     local frontlight_control=nil
     if Device:hasFrontlight() then
         local minimum,maximum=self:_reader_frontlight_bounds()

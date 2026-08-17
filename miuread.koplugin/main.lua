@@ -24,6 +24,7 @@ local Text=require("miuread.text")
 local U=require("miuread.util")
 local Lazy=require("miuread.lazy")
 local PluginMaintenance=require("miuread.plugin_maintenance")
+local PluginCrashReport=require("miuread.plugin_crash_report")
 local PluginUpdate=require("miuread.plugin_update")
 local PluginSync=require("miuread.plugin_sync")
 local PluginSyncCenter=require("miuread.plugin_sync_center")
@@ -116,6 +117,7 @@ local PathChooser=gesture_aware_class(RawPathChooser,{_miuread_transient=true,_m
 local _=Text.tr
 local unpack_args=unpack or table.unpack
 local HomeLayouts = require("miuread.home_layout_constants")
+local AnnotationKinds = require("miuread.annotation_kinds")
 local COVER_GUARD_WINDOW = HomeLayouts.COVER_GUARD_WINDOW
 local HOME_LOCAL_CACHE_TTL = HomeLayouts.HOME_LOCAL_CACHE_TTL
 local HOME_SHELF_REFRESH_TTL = HomeLayouts.HOME_SHELF_REFRESH_TTL
@@ -279,6 +281,7 @@ local RUNTIME_MODE_KEY=HomeLayouts.RUNTIME_MODE_KEY
 local Plugin=WidgetContainer:extend{name="miuread",is_doc_only=false,version=Config.VERSION}
 ExternalAnnotationSync.install(Plugin)
 PluginMaintenance.install(Plugin)
+PluginCrashReport.install(Plugin)
 PluginUpdate.install(Plugin)
 PluginSync.install(Plugin)
 PluginSyncCenter.install(Plugin)
@@ -624,6 +627,12 @@ function Plugin:init()
             self:_schedule_mode_intro_after_surface(.85)
         end
     end
+    -- Crash detection runs after a full successful init: any crash.log growth
+    -- is then guaranteed to come from previous runs, not this one.
+    pcall(self.crash_report_startup, self)
+    -- Session keepalive: renew the web session on book open and on a daily
+    -- timer to reduce how often a server-side TTL recycle forces re-scanning.
+    pcall(self.sync.schedule_login_keepalive_loop, self.sync)
 end
 
 function Plugin:addToMainMenu(items)
@@ -1326,9 +1335,6 @@ function Plugin:_download_menu_text()
     local queue=self.store:download_queue()
     return #queue>0 and ("下载管理 · "..tostring(#queue).." 项等待") or "下载管理"
 end
-function Plugin:_sync_menu_text()
-    return "阅读同步 · "..tostring(self:progress_sync_label())
-end
 function Plugin:home_menu()
     self:maybe_auto_check_update(false)
     local account={text=self:_account_status_label(),callback=function() self:show_account_status() end}
@@ -1340,7 +1346,6 @@ function Plugin:home_menu()
     local trailing={
         {text="搜索书籍",callback=self:safe("search",function() self:search_dialog() end)},
         {text=self:_download_menu_text(),callback=self:safe("downloads",function() self:show_downloads() end)},
-        {text=self:_sync_menu_text(),sub_item_table_func=function() return self:sync_menu() end},
         account,
         {text="觅阅设置",sub_item_table_func=function() return self:settings_menu() end},
         {text="KOReader 菜单",callback=function() self:_show_native_koreader_menu() end},
@@ -1460,7 +1465,6 @@ function Plugin:reader_menu()
             sub_item_table_func=function() return self:external_annotations_menu_items() end,
         }
     end
-    out[#out+1]={text=self:_sync_menu_text(),sub_item_table_func=function() return self:sync_menu() end}
     out[#out+1]={text=self:_download_menu_text(),callback=function() self:show_downloads() end}
     out[#out+1]={text="觅阅设置",sub_item_table_func=function() return self:settings_menu() end}
     if not desktop then
@@ -2002,10 +2006,9 @@ function Plugin:show_local_annotation_sync_status()
     if type(failures)=="table" and #failures>0 then
         lines[#lines+1]=""
         lines[#lines+1]="最近失败："
-        local kind_label={bookmark="书签",highlight="划线",thought="想法"}
         for _,failure in ipairs(failures) do
             lines[#lines+1]=string.format("- %s [%s] %s",
-                kind_label[failure.kind] or tostring(failure.kind or "批注"),
+                AnnotationKinds.label(failure.kind),
                 tostring(failure.stage or failure.state or "unknown"),
                 U.utf8_truncate(tostring(failure.error or ""),72,""))
         end
@@ -2121,12 +2124,11 @@ function Plugin:sync_local_annotations_now(force_diagnostic)
         if type(result.errors)=="table" and #result.errors>0 then
             lines[#lines+1]=""
             lines[#lines+1]="未上传："
-            local kind_label={bookmark="书签",highlight="划线",thought="想法"}
             for index,item in ipairs(result.errors) do
                 if index>6 then break end
                 if type(item)=="table" then
                     lines[#lines+1]=string.format("- %s [%s] %s",
-                        kind_label[item.kind] or tostring(item.kind or "批注"),
+                        AnnotationKinds.label(item.kind),
                         tostring(item.stage or "unknown"),
                         U.utf8_truncate(tostring(item.error or ""),72,""))
                 else
@@ -2221,6 +2223,14 @@ end
 
 function Plugin:_capture_local_annotation_snapshot(reason)
     if not (self.ui and self.ui.document) then return false end
+    -- Fluency: the explicit-open refresh is throttled. Any successful snapshot
+    -- (including mutation-triggered ones) arms a short cooldown, so repeatedly
+    -- opening the annotation panel does not re-run a full mirror upsert on the
+    -- UI thread every time.
+    if reason == "annotation_panel"
+        and monotonic_wall_time() - (self._local_annotation_panel_snapshot_at or 0) < 15 then
+        return true
+    end
     local total_started=monotonic_wall_time()
     -- During reading Sync already owns the current book record. Avoid a full
     -- Store:reload() before every local snapshot; only fall back when the
@@ -2275,6 +2285,7 @@ function Plugin:_capture_local_annotation_snapshot(reason)
     local snapshot_ms=math.floor((monotonic_wall_time()-snapshot_started)*1000+.5)
     local total_ms=math.floor((monotonic_wall_time()-total_started)*1000+.5)
     if ok and result then
+        self._local_annotation_panel_snapshot_at = monotonic_wall_time()
         logger.info("[MiuRead][LocalAnnotations] snapshot saved",
             "book=",book_id,"count=",tostring(result.count or 0),
             "toc_ms=",tostring(prepared.toc_prepare_ms or 0),
@@ -2410,7 +2421,90 @@ function Plugin:onSuspend()
         end
     end
     self.sync:on_suspend()
+    -- Power-key suspend: kick off a best-effort annotation/thought sync before
+    -- the device sleeps. KOReader pauses the process during suspend, so the
+    -- request completes after wake and its callback shows the result then.
+    self:_sync_annotations_before_suspend()
 end
+
+function Plugin:_sync_annotations_before_suspend()
+    local current = self:_current_book_record()
+    local book_id = current and current.book and tostring(current.book.book_id or current.book.bookId or "") or ""
+    if book_id == "" or not self:logged_in() then return false end
+    if self.annotation_async and self.annotation_async:busy() then return false end
+    if self._sleep_sync_guard then return false end
+    self._sleep_sync_guard = true
+    local prefs = U.copy(self:_annotation_sync_preferences())
+    local book = U.copy(current.book or {})
+    local record = U.copy(current.record or {})
+    local service = self.annotation_sync
+    local ok, err = self.annotation_async:run("annotation-sync-suspend", function()
+        return service:sync_book(book, record, {preferences=prefs, limit=200})
+    end, function(worker_result)
+        self._sleep_sync_guard = false
+        local synced = worker_result and worker_result.ok == true
+            and worker_result.value and worker_result.value.ok == true
+        if not self._miuread_suspended then
+            self:toast(synced and "息屏前批注已同步" or "息屏前批注同步未完成", 2.5)
+        end
+    end)
+    if not ok then self._sleep_sync_guard = false end
+    return true
+end
+
+-- 休眠按钮（觅阅首页/阅读器「休眠」）：先同步批注/想法与阅读时长，完成后
+-- 提示结果再真正息屏；8 秒超时兜底，失败也照常息屏（用户要求"失败报失败再息屏"）。
+function Plugin:_sleep_sync_then_suspend()
+    if self._sleep_sync_busy then return true end
+    self._sleep_sync_busy = true
+    local done = false
+    local function finish(label)
+        if done then return end
+        done = true
+        self._sleep_sync_busy = false
+        if label then self:toast(label, 1.8) end
+        UIManager:flushSettings()
+        UIManager:suspend()
+    end
+    -- 阅读时长：daemon final flush（若在阅读会话中）
+    if self.sync and not self.sync.suspended and self.ui and self.ui.document then
+        pcall(function()
+            local elapsed = 0
+            if type(self.sync._final_elapsed) == "function" then
+                elapsed = math.max(0, math.floor(tonumber(self.sync:_final_elapsed(true)) or 0))
+            end
+            self.sync:stop_fast("sleep", elapsed)
+        end)
+    end
+    local current = self:_current_book_record()
+    local book_id = current and current.book and tostring(current.book.book_id or current.book.bookId or "") or ""
+    if book_id == "" or not self:logged_in() or (self.annotation_async and self.annotation_async:busy()) then
+        finish(nil)
+        return true
+    end
+    local timeout = UIManager:scheduleIn(8, function() finish("同步超时，即将休眠") end)
+    pcall(function() self:_capture_local_annotation_snapshot("sleep_sync") end)
+    local prefs = U.copy(self:_annotation_sync_preferences())
+    local book = U.copy(current.book or {})
+    local record = U.copy(current.record or {})
+    local service = self.annotation_sync
+    local started, err = self.annotation_async:run("annotation-sync-sleep", function()
+        return service:sync_book(book, record, {preferences=prefs, limit=200})
+    end, function(worker_result)
+        UIManager:unschedule(timeout)
+        if worker_result and worker_result.ok == true and worker_result.value and worker_result.value.ok == true then
+            finish("批注与阅读时长已同步，即将休眠")
+        else
+            finish("同步未完成，即将休眠")
+        end
+    end)
+    if not started then
+        UIManager:unschedule(timeout)
+        finish(nil)
+    end
+    return true
+end
+
 function Plugin:onResume()
     self._miuread_suspended=false
     HOME_SESSION.suspended=false

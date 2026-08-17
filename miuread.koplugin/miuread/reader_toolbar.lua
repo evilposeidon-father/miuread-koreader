@@ -411,19 +411,19 @@ function Toolbar:_top_status_row(root, header, x, y, width, height)
     local has_bluetooth = header.bluetooth_visible == true
     local entries, callbacks, holds, ref_keys, weights
     if has_bluetooth then
-        weights = {29, 13, 21, 11, 13, 13}
+        weights = {26, 11, 10, 12, 13, 13}
         entries = {
             {icon = "wifi", label = header.wifi_label or "Wi-Fi", enabled = type(header.wifi_callback) == "function", alert = header.wifi_alert == true, bold = true, multiline = true},
             {icon = "bluetooth", label = header.bluetooth_label or "蓝牙", enabled = type(header.bluetooth_callback) == "function", bold = true},
-            {icon = "sync", label = header.sync_label or "同步", enabled = type(header.sync_callback) == "function", alert = header.sync_alert == true, bold = true},
             {icon = "battery", label = header.battery_label or "", enabled = true, bold = true},
+            {label = header.duration_label or "", enabled = header.duration_label ~= nil and header.duration_label ~= "", bold = true, text_align = "center"},
             {icon = "home", label = header.home_label or "首页", enabled = type(header.home_callback) == "function", bold = true},
             {label = header.more_label or "更多", enabled = type(header.more_callback) == "function", text_align = "center", bold = true},
         }
         callbacks = {
             function() self:_activate(header.wifi_callback, "Wi-Fi") end,
             function() self:_activate(header.bluetooth_callback, "蓝牙") end,
-            function() self:_activate(header.sync_callback, "同步") end,
+            nil,
             nil,
             function() self:_activate(header.home_callback, "首页") end,
             function() self:_activate(header.more_callback, "更多") end,
@@ -432,19 +432,19 @@ function Toolbar:_top_status_row(root, header, x, y, width, height)
             type(header.wifi_hold_callback) == "function" and function() self:_activate_hold(header.wifi_hold_callback, "Wi-Fi 设置") end or nil,
             nil,nil,nil,nil,nil,
         }
-        ref_keys = {"wifi","bluetooth","sync","battery","home","more"}
+        ref_keys = {"wifi","bluetooth","battery","duration","home","more"}
     else
-        weights = {33, 23, 14, 15, 15}
+        weights = {30, 12, 13, 15, 15}
         entries = {
             {icon = "wifi", label = header.wifi_label or "Wi-Fi", enabled = type(header.wifi_callback) == "function", alert = header.wifi_alert == true, bold = true, multiline = true},
-            {icon = "sync", label = header.sync_label or "同步", enabled = type(header.sync_callback) == "function", alert = header.sync_alert == true, bold = true},
             {icon = "battery", label = header.battery_label or "", enabled = true, bold = true},
+            {label = header.duration_label or "", enabled = header.duration_label ~= nil and header.duration_label ~= "", bold = true, text_align = "center"},
             {icon = "home", label = header.home_label or "首页", enabled = type(header.home_callback) == "function", bold = true},
             {label = header.more_label or "更多", enabled = type(header.more_callback) == "function", text_align = "center", bold = true},
         }
         callbacks = {
             function() self:_activate(header.wifi_callback, "Wi-Fi") end,
-            function() self:_activate(header.sync_callback, "同步") end,
+            nil,
             nil,
             function() self:_activate(header.home_callback, "首页") end,
             function() self:_activate(header.more_callback, "更多") end,
@@ -453,7 +453,7 @@ function Toolbar:_top_status_row(root, header, x, y, width, height)
             type(header.wifi_hold_callback) == "function" and function() self:_activate_hold(header.wifi_hold_callback, "Wi-Fi 设置") end or nil,
             nil,nil,nil,nil,
         }
-        ref_keys = {"wifi","sync","battery","home","more"}
+        ref_keys = {"wifi","battery","duration","home","more"}
     end
     local used = 0
     for index, entry in ipairs(entries) do
@@ -799,7 +799,6 @@ function Toolbar:updateFromOptions(opts)
     local header=type(opts.header)=="table" and opts.header or {}
     set_ref(self._text_refs.wifi,header.wifi_label or "Wi-Fi",self._text_formatters.wifi)
     set_ref(self._text_refs.bluetooth,header.bluetooth_label or "蓝牙",self._text_formatters.bluetooth)
-    set_ref(self._text_refs.sync,header.sync_label or "同步",self._text_formatters.sync)
     set_ref(self._text_refs.battery,header.battery_label or "")
     set_ref(self._text_refs.home,header.home_label or "首页")
     set_ref(self._text_refs.more,header.more_label or "更多")

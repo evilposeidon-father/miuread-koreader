@@ -23,6 +23,9 @@ local LocalLibrary = Lazy("miuread.local_library")
 local ReaderListDialog = Lazy("miuread.reader_list_dialog")
 local ScreenshotMode = Lazy("miuread.screenshot_mode")
 local HomeLayouts = require("miuread.home_layout_constants")
+local HomeData = require("miuread.home_data")
+local ReadTimeLedger = require("miuread.read_time_ledger")
+local AnnotationKinds = require("miuread.annotation_kinds")
 local GestureBridge = require("miuread.gesture_bridge")
 local RawConfirmBox = require("ui/widget/confirmbox")
 local RawInputDialog = require("ui/widget/inputdialog")
@@ -677,10 +680,86 @@ function Plugin:_home_source_text(book)
         local format=tostring(book.format or ""):upper()
         return format~="" and ("本地 · "..format) or "本地书籍"
     end
-    if book.source=="miuread" or book.shelf_section=="generated" then return "微信书架" end
+    if book.source=="miuread" or book.shelf_section=="generated" then return "书架" end
     if Protocol.is_mp_account(tostring(book.bookId or book.book_id or "")) then return "公众号" end
     local category=U.trim(tostring(book.category or ""))
-    return category~="" and ("微信书架 · "..category) or "微信书架"
+    return category~="" and ("书架 · "..category) or "书架"
+end
+
+function Plugin:_home_me_duration()
+    -- Device feedback: 页面今日/本周时长改用与「阅读周报」弹窗同一计算
+    -- （KOReader 阅读统计），两处数值必然一致；「刷新阅读时长」按钮重算本函数。
+    -- reading_stats(true) forces a live read; the default 30s cache made the
+    -- card show stale values while the report showed fresh ones (device
+    -- feedback: 点击刷新没生效 / 周报没同步到卡片).
+    local ok, stats = pcall(HomeData.reading_stats, HomeData, true)
+    if not ok or type(stats) ~= "table" then
+        return {today = "—", week = "—", source = "本机统计"}
+    end
+    local week = tonumber(stats.week_seconds or 0) or 0
+    local today = tonumber(stats.today_seconds or 0) or 0
+    local function fmt(seconds)
+        -- format_duration is dot-defined (no self): passing HomeData as the
+        -- first pcall arg made seconds a table -> tonumber -> 0 分钟 (device
+        -- feedback: card showed 0 while the report showed real values).
+        local ok2, text = pcall(HomeData.format_duration, seconds)
+        if ok2 and tostring(text or "") ~= "" then return tostring(text) end
+        return tostring(seconds > 0 and math.floor(seconds / 60) .. " 分钟" or "—")
+    end
+    return {today = fmt(today), week = fmt(week), source = "本机统计"}
+end
+
+function Plugin:_home_refresh_duration()
+    -- 我的页「刷新阅读时长」：强制重读统计（_home_me_duration 用
+    -- reading_stats(true)）并立即重建当前页。直接走 _show_miuread_home_now
+    -- 而不是 _refresh_home_view，避免 0.05s 调度窗口内被跳过导致
+    -- 「提示已刷新但页面没变」（device feedback）。
+    if not HomeView.is_shown() then return false end
+    self:toast("阅读时长已刷新", 1.2)
+    UIManager:scheduleIn(.05, function()
+        if HomeView.is_shown() and not self:_active_reader_ui() then
+            self:_show_miuread_home_now(false, true, true, "content")
+        end
+    end)
+    return true
+end
+
+function Plugin:_set_home_page(page)
+    page = HomeLayouts.normalize_page(page)
+    local home, preferences = self:_home_preferences()
+    if (home.page or "shelf") == page then return end
+    -- Debounce rapid tab taps: e-ink full rebuilds are expensive and must not
+    -- queue multiple builds within the same event burst.
+    if self._home_page_switch_pending == true then return true end
+    self._home_page_switch_pending = true
+    local generation = (self._home_page_switch_generation or 0) + 1
+    self._home_page_switch_generation = generation
+    local retries = 0
+    local function apply()
+        if generation ~= self._home_page_switch_generation then return end
+        self._home_page_switch_pending = false
+        if not HomeView.is_shown() then
+            -- Right after a reader close the parked home is still restoring;
+            -- dropping the tap here made 书城/我的 clicks randomly dead
+            -- (device feedback). Retry shortly instead of discarding.
+            retries = retries + 1
+            if retries <= 6 then
+                self._home_page_switch_pending = true
+                UIManager:scheduleIn(.25, apply)
+            end
+            return
+        end
+        local current_home, current_preferences = self:_home_preferences()
+        if (current_home.page or "shelf") == page then return end
+        current_home.page = page
+        self:_save_home_preferences_deferred(current_home, current_preferences)
+        -- No page-name toast on tab switches: _refresh_home_view pops an
+        -- InfoMessage whenever message is non-empty, which the bottom tabs
+        -- must not trigger (device feedback: 弹窗提示页面名没必要).
+        self:_refresh_home_view(nil, "content")
+    end
+    UIManager:nextTick(apply)
+    return true
 end
 
 function Plugin:_show_home_book_open_popup(book,anchor)
@@ -903,7 +982,7 @@ end
 
 function Plugin:_home_all_books_option_dialog()
     local state=self:_home_all_books_state()
-    local source_labels={all="全部来源",account="微信书架",generated="已下载",["local"]="本地书籍",mp="公众号"}
+    local source_labels={all="全部来源",account="书架",generated="已下载",["local"]="本地书籍",mp="公众号"}
     local status_labels={all="全部状态",reading="阅读中",unread="尚未开始",finished="已读完",downloaded="已下载",failed="异常"}
     local sort_labels={recent="最近阅读",added="最近加入",title="按书名",author="按作者"}
 
@@ -1007,11 +1086,14 @@ function Plugin:_annotation_book_title_map()
     return map
 end
 
-function Plugin:show_annotation_search_dialog(back_callback)
+function Plugin:show_annotation_search_dialog(back_callback, scope)
     local d
+    local scope_title = scope == "thought" and "搜索我的想法" or (scope == "highlight" and "搜索我的划线" or "搜索批注")
+    local scope_desc = scope == "thought" and "只搜索我写下的想法"
+        or (scope == "highlight" and "只搜索我的划线（含书签）" or "搜索全部书籍的划线、想法和书签")
     d=InputDialog:new{
-        title="搜索批注",
-        description="搜索全部书籍的划线、想法和书签",
+        title=scope_title,
+        description=scope_desc,
         input=tostring(self._annotation_last_search or ""),
         buttons={{
             {text="取消",id="close",callback=function()
@@ -1026,7 +1108,7 @@ function Plugin:show_annotation_search_dialog(back_callback)
                     return
                 end
                 self._annotation_last_search=query
-                UIManager:nextTick(function() self:_annotation_run_search(query,back_callback) end)
+                UIManager:nextTick(function() self:_annotation_run_search(query,back_callback,scope) end)
             end},
         }},
     }
@@ -1035,12 +1117,25 @@ function Plugin:show_annotation_search_dialog(back_callback)
     return true
 end
 
-function Plugin:_annotation_run_search(query,back_callback)
+function Plugin:_annotation_run_search(query,back_callback,scope)
     local results,err=LocalAnnotationDatabase.search_all(self.store,query,200)
     if type(results)~="table" then
         self:info("批注搜索失败：\n"..tostring(err or "无法读取本地批注"))
         if back_callback then UIManager:scheduleIn(.05,back_callback) end
         return false
+    end
+    if scope == "thought" or scope == "highlight" then
+        local filtered={}
+        for _,result in ipairs(results) do
+            local kind=tostring(result.kind or "")
+            if scope=="thought" and kind=="thought" then
+                filtered[#filtered+1]=result
+            elseif scope=="highlight" and (kind=="highlight" or kind=="bookmark") then
+                -- 划线 scope includes bookmarks (they render as line markers).
+                filtered[#filtered+1]=result
+            end
+        end
+        results=filtered
     end
     return self:_annotation_search_results(query,results,back_callback)
 end
@@ -1055,7 +1150,7 @@ function Plugin:_annotation_search_excerpt(result)
         end
     end
     text=U.trim(text:gsub("%s+"," "))
-    if text=="" then text="无文字内容" end
+    if text=="" then text=AnnotationKinds.TEXT_FALLBACK end
     return U.utf8_truncate(text,140,"…")
 end
 
@@ -1143,20 +1238,31 @@ function Plugin:_annotation_open_result(result,book_info,manage,after_manage)
     return false
 end
 
-function Plugin:_annotation_search_results(query,results,back_callback)
+function Plugin:_annotation_recent_list(back_callback)
+    local results, err = LocalAnnotationDatabase.recent_all(self.store, 200)
+    if type(results) ~= "table" then
+        self:info("批注读取失败：\n" .. tostring(err or "无法读取本地批注"))
+        return false
+    end
+    return self:_annotation_search_results("", results, back_callback, {
+        title = "我的批注",
+        subtitle = "最近划线与想法 · 点击跳转，长按管理",
+        on_back = back_callback or function() self:_refresh_home_view(nil, "content") end,
+    })
+end
+
+function Plugin:_annotation_search_results(query,results,back_callback,opts)
     local title_map=self:_annotation_book_title_map()
-    local kind_labels={bookmark="书签",highlight="划线",thought="想法"}
-    local kind_icons={bookmark="bookmark",highlight="highlight",thought="thought"}
     local rows={}
     for _,result in ipairs(type(results)=="table" and results or {}) do
         local current=result
         local info=title_map[tostring(current.book_id or "")] or {
             title="未知书籍",author="",book=nil,
         }
-        local value=kind_labels[current.kind] or "批注"
+        local value=AnnotationKinds.label(current.kind)
         if current.page then value=value.." · 第 "..tostring(current.page).." 页" end
         rows[#rows+1]={
-            icon=kind_icons[current.kind] or "highlight",
+            icon=AnnotationKinds.icon(current.kind),
             label=self:_annotation_search_excerpt(current),
             detail=U.utf8_truncate(info.title,42,"…")
                 ..(info.author~="" and (" · "..U.utf8_truncate(info.author,18,"…")) or ""),
@@ -1164,15 +1270,24 @@ function Plugin:_annotation_search_results(query,results,back_callback)
             callback=function() self:_annotation_open_result(current,info,false) end,
             hold_callback=function() self:_annotation_open_result(current,info,true,function()
                 self:_capture_local_annotation_snapshot("annotation_search_manage")
-                UIManager:scheduleIn(.06,function() self:_annotation_run_search(query,back_callback) end)
+                -- Management may have written rows through paths other than this
+                -- module; drop the recent-list cache so the re-open is fresh.
+                LocalAnnotationDatabase.invalidate_recent_cache()
+                UIManager:scheduleIn(.06,function()
+                    if query=="" then self:_annotation_recent_list(back_callback)
+                    else self:_annotation_run_search(query,back_callback) end
+                end)
             end) end,
         }
     end
+    local dialog_opts = type(opts) == "table" and opts or {}
     ReaderListDialog.show{
-        title="批注搜索",
-        subtitle="“"..tostring(query).."” · "..tostring(#rows).." 处 · 点击跳转，长按管理",
-        items=rows,page_size=5,empty_text="没有找到匹配的批注",
-        on_back=function() self:show_annotation_search_dialog(back_callback) end,
+        title=dialog_opts.title or "批注搜索",
+        subtitle=dialog_opts.subtitle
+            or ("“"..tostring(query).."” · "..tostring(#rows).." 处 · 点击跳转，长按管理"),
+        items=rows,page_size=5,
+        empty_text=query=="" and "还没有批注记录" or "没有找到匹配的批注",
+        on_back=dialog_opts.on_back or function() self:show_annotation_search_dialog(back_callback) end,
         on_home=self:_home_enabled() and function() return self:return_to_miuread_home("annotation search") end or nil,
     }
     return true
@@ -1456,7 +1571,7 @@ function Plugin:_show_home_refresh_popup(anchor)
         actions={
             {icon="↻",label="更新当前栏目",detail="只检查当前看到的内容",callback=function() self:_home_manual_refresh() end},
             {icon="▣",label="刷新整个主页",detail="核对已有状态并整页更新一次",callback=function() self:_home_refresh_whole_page() end},
-            {icon="☁",label="更新微信书架",detail="重新获取微信书架变化",callback=function() self:_home_refresh_remote(true,true) end},
+            {icon="☁",label="更新书架",detail="重新获取微信书架变化",callback=function() self:_home_refresh_remote(true,true) end},
             {icon="⌕",label="更新本地书库",detail="检查新增、删除和移动的书籍",callback=function()
                 local started=self:_home_scan_local(true)
                 if started then self:toast("正在更新本地书库…",2) end
@@ -1485,32 +1600,6 @@ function Plugin:_show_home_download_popup(anchor)
             end},
         },
         footer_action={label="存储清理",callback=function() self:show_download_cleanup_dialog() end},
-    }
-end
-
-function Plugin:_show_home_sync_popup(anchor)
-    local summary=self:_home_sync_summary()
-    local subtitle=self:_home_sync_status_label()
-    if summary.total>0 then
-        subtitle=subtitle.."  ·  进度 "..tostring(summary.progress)
-            .."  时间 "..tostring(summary.time)
-            .."  划线 "..tostring(summary.highlight)
-            .."  想法 "..tostring(summary.thought)
-    end
-    ActionSheet.show{
-        cache_key="home_sync",
-        anchor=anchor,
-        preferred_direction="below",
-        title="同步",
-        subtitle=subtitle,
-        actions={
-            {icon="⇅",label="同步待处理内容",detail="进度 时间 划线与想法",callback=function() self:_sync_home_pending() end},
-            {icon="i",label="查看同步详情",detail="分别查看四类数据状态",callback=function() self:show_sync_status(false) end},
-            {icon="⚙",label="同步设置",detail="开关 可见范围 提醒与诊断",callback=function()
-                self:_show_standalone_menu("同步设置",self:sync_settings_menu())
-            end},
-        },
-        wide_last=true,
     }
 end
 
@@ -1553,7 +1642,7 @@ function Plugin:_show_home_settings_center()
     return self:_show_standalone_menu("觅阅设置",{
         {text="首页与书架",post_text="布局 书架与快捷入口",sub_item_table_func=function() return self:display_settings_menu() end},
         {text="阅读界面",post_text="显示与快捷控制",sub_item_table_func=function() return self:reader_quick_panel_settings_menu() end},
-        {text="评论、划线与想法",post_text="评论显示与本地批注",sub_item_table_func=function() return PluginSettings.comments(self) end},
+        {text="想法、划线与批注",post_text="想法显示与本地批注",sub_item_table_func=function() return PluginSettings.comments(self) end},
         {text="时间与时区",post_text="时间来源与地区显示",sub_item_table_func=function() return self:time_display_settings_menu() end},
         {text="更新与关于",post_text="版本 更新通道与说明",sub_item_table_func=function() return PluginSettings.update_about(self) end},
         {text="工具与维护",post_text="修复 清理与诊断",sub_item_table_func=function() return self:maintenance_menu() end},
@@ -1723,7 +1812,7 @@ function Plugin:_home_action_function_actions(key,anchor)
     if key=="refresh" then return {
         {icon="↻",label="更新当前栏目",detail="只检查当前看到的内容",callback=function() self:_home_manual_refresh() end},
         {icon="▣",label="刷新整个主页",detail="核对已有状态并整页更新一次",callback=function() self:_home_refresh_whole_page() end},
-        {icon="☁",label="更新微信书架",detail="重新获取微信书架变化",callback=function() self:_home_refresh_remote(true,true) end},
+        {icon="☁",label="更新书架",detail="重新获取微信书架变化",callback=function() self:_home_refresh_remote(true,true) end},
         {icon="⌕",label="更新本地书库",detail="检查新增、删除和移动的书籍",callback=function()
             local started=self:_home_scan_local(true)
             if started then self:toast("正在更新本地书库…",2) end
@@ -1750,13 +1839,6 @@ function Plugin:_home_action_function_actions(key,anchor)
         {icon="✚",label="检查书籍完整性",detail="发现需要修复的已下载书",callback=function() self:scan_downloaded_books_for_integrity_repair() end},
         {icon="⌫",label="存储清理",detail="清理临时文件与失效缓存",callback=function() self:show_download_cleanup_dialog() end},
     } end
-    if key=="sync" then return {
-        {icon="⇅",label="立即同步",detail="处理当前待同步内容",callback=function() self:_sync_home_pending() end},
-        {icon="i",label="同步详情",detail="查看各类数据状态",callback=function() self:show_sync_status(false) end},
-        {icon="✚",label="修复同步",detail="检查并修复异常状态",callback=function() self:show_sync_status(true) end},
-        {icon="⚙",label="同步设置",detail="开关 范围与提醒",callback=function() self:_show_standalone_menu("同步设置",self:sync_settings_menu(),{anchor=anchor}) end},
-        {icon="!",label="同步诊断",detail="查看诊断信息",callback=function() self:_show_standalone_menu("同步诊断",self:sync_diagnostics_menu(),{anchor=anchor}) end},
-    } end
     if key=="sleep" then
         local rows={
             {icon="◐",label="休眠",detail="立即进入休眠",callback=function() self:_home_sleep() end},
@@ -1772,7 +1854,6 @@ function Plugin:_home_action_function_actions(key,anchor)
         {icon="▦",label="首页与书架",detail="布局 书架与快捷入口",callback=function() self:_show_standalone_menu("首页与书架",self:display_settings_menu(),{anchor=anchor}) end},
         {icon="Aa",label="阅读界面",detail="显示与快捷控制",callback=function() self:_show_standalone_menu("阅读界面",self:reader_quick_panel_settings_menu(),{anchor=anchor}) end},
         {icon="✎",label="评论与批注",detail="评论 划线与想法",callback=function() self:_show_standalone_menu("评论、划线与想法",PluginSettings.comments(self),{anchor=anchor}) end},
-        {icon="⇅",label="同步",detail="进度 时间与批注同步",callback=function() self:_show_standalone_menu("同步",self:sync_settings_menu(),{anchor=anchor}) end},
         {icon="↺",label="更新与关于",detail="版本 更新通道与说明",callback=function() self:_show_standalone_menu("更新与关于",PluginSettings.update_about(self),{anchor=anchor}) end},
         {icon="⚙",label="工具与维护",detail="修复 清理与诊断",callback=function() self:_show_standalone_menu("工具与维护",self:maintenance_menu(),{anchor=anchor}) end},
     } end
@@ -2028,11 +2109,6 @@ function Plugin:_home_action_entries()
     elseif download_state.status=="active" then download_badge=tostring(self:_download_percent(download_state)).."%"
     elseif #queue>0 then download_badge=tostring(#queue) end
 
-    local sync_summary=self:_home_sync_summary()
-    local sync_badge=nil
-    if sync_summary.failed>0 then sync_badge="!"
-    elseif sync_summary.total>0 then sync_badge=sync_summary.total>99 and "99+" or tostring(sync_summary.total) end
-
     local definitions={
         refresh={icon="↻",icon_key="refresh",label="更新",callback=function()
             -- Single tap means "update what I am looking at". E-ink full refresh
@@ -2041,9 +2117,6 @@ function Plugin:_home_action_entries()
         end},
         search={icon="⌕",icon_key="search",label="搜索",callback=function(anchor) self:_show_home_search_popup(anchor) end},
         downloads={icon="⇩",icon_key="download",label="下载",badge=download_badge,callback=function(anchor) self:_show_home_download_popup(anchor) end},
-        sync={icon="⇅",icon_key="sync",label="同步",badge=sync_badge,callback=function(anchor)
-            self:_sync_home_pending(); self:_show_home_quick_notice(anchor,"正在同步","待处理内容已提交")
-        end},
         miuread_settings={icon="⚙",icon_key="settings",label="觅阅设置",callback=function(anchor) self:_show_home_settings_popup(anchor) end},
         all_books={icon="▦",label="全部书籍",callback=function() self:show_home_all_books() end},
         history={icon="◷",label="阅读历史",callback=function() self:show_home_reading_history() end},
@@ -2105,7 +2178,7 @@ end
 
 function Plugin:_home_library_sections(account_count,generated_count,local_count,mp_count)
     return {
-        {title="微信书架",detail="账号中的全部书籍",count=account_count,on_tap=function()
+        {title="书架",detail="账号中的全部书籍",count=account_count,on_tap=function()
             self:_home_leave_and_run("account shelf",function() self:show_shelf(false,false,"account") end)
         end},
         {title="已下载",detail="已保存到设备",count=generated_count,on_tap=function()
@@ -3182,7 +3255,7 @@ end
 function Plugin:_home_prepare_hero_book(book)
     if type(book)~="table" then return nil end
     local hero=U.copy(book)
-    hero.heading="最近阅读"
+    hero.heading="继续阅读"
     hero.source_text=self:_home_source_text(hero)
     hero.last_read_text=self:_home_last_read_text(hero)
     hero.status_text=self:_home_status_text(hero,hero.source=="local" or hero.local_file==true)
@@ -3296,11 +3369,18 @@ function Plugin:_show_miuread_home_now(force_scan,from_refresh,quiet,refresh_kin
     local hero=self:_home_prepare_hero_book(self:_home_recent_book(miuread_rows,local_rows,account_rows))
 
     local sections={
-        account={title="微信书架",rows=account_rows,empty="这里还没有微信书架内容"},
-        generated={title="已下载",rows=miuread_rows,empty="这里还没有已下载书籍"},
+        account={title="书架",rows=account_rows,empty="书架空空，去书城逛逛吧"},
+        generated={title="已下载",rows=miuread_rows,empty="还没有已下载的书籍"},
         ["local"]={title="本地书籍",rows=local_rows,empty=self:_home_local_empty_text()},
         mp={title="公众号",rows=mp_rows,empty="这里还没有公众号内容"},
     }
+    -- P3: shelf-wide sort (recent/added/title/author), pure sorter in constants.
+    local shelf_sort=home.shelf_sort or "recent"
+    for _,section in pairs(sections) do
+        if type(section.rows)=="table" and #section.rows>0 then
+            section.rows=HomeLayouts.sort_rows(section.rows,shelf_sort)
+        end
+    end
     self._home_data_revision=(tonumber(self._home_data_revision) or 0)+1
     self._home_sections=sections
     local visible_keys=self:_home_visible_section_keys(sections,home)
@@ -3339,7 +3419,6 @@ function Plugin:_show_miuread_home_now(force_scan,from_refresh,quiet,refresh_kin
     local view,err=HomeView.show({
         title="觅阅",
         wifi_text=self:_home_wifi_text(),
-        sync_text=self:_home_sync_status_text(),
         time_text=self:_display_time("%H:%M"),
         battery_text=self:_home_battery_text(),
         account_name=self:_home_account_name(),
@@ -3358,13 +3437,15 @@ function Plugin:_show_miuread_home_now(force_scan,from_refresh,quiet,refresh_kin
         lockscreen_enabled=home.lockscreen_recent~=false,
         screensaver_file=screensaver_file,
         on_quick_panel=function() self:show_home_quick_panel() end,
-        on_sync=function() self:_sync_shortcut() end,
-        on_sync_hold=function() self:_sync_shortcut_diagnostics() end,
         on_interaction=function(first,kind) self:_home_note_interaction(first,kind) end,
         on_account=function() self:_home_leave_and_run("account status",function() self:show_account_status() end) end,
         on_menu=function() self:show_home_menu() end,
         on_back=function() return self:_home_handle_back() end,
         on_empty_account=function() self:_home_open_section(active) end,
+        on_empty_shelf=function()
+            if active=="account" then self:_set_home_page("store")
+            else self:show_home_all_books() end
+        end,
         on_open_book=function(book,anchor) self:_home_open_book(book,anchor) end,
         on_hold_book=function(book,anchor) self:_home_hold_book(book,anchor) end,
         home_actions=self:_home_action_entries(),
@@ -3373,6 +3454,22 @@ function Plugin:_show_miuread_home_now(force_scan,from_refresh,quiet,refresh_kin
             else self:show_home_all_books() end
         end,
         on_shelf_page=function(delta) self:_home_change_page(delta) end,
+        page=home.page or "shelf",
+        tabs_bottom={
+            {title="书架", selected=(home.page or "shelf")=="shelf", on_tap=function() self:_set_home_page("shelf") end},
+            {title="书城", selected=(home.page or "shelf")=="store", on_tap=function() self:_set_home_page("store") end},
+            {title="我的", selected=(home.page or "shelf")=="me", on_tap=function() self:_set_home_page("me") end},
+        },
+        on_page=function(page) self:_set_home_page(page) end,
+        on_store_search=function() self:search_dialog("搜索微信读书") end,
+        on_store_mp=function() self:show_mp_shelf(false) end,
+        me_stats=(home.page or "shelf")=="me" and self:_home_me_duration() or nil,
+        on_refresh_duration=function() self:_home_refresh_duration() end,
+        on_reading_report=function() self:show_reading_report() end,
+        on_my_annotations=function() self:_annotation_recent_list() end,
+        on_all_books=function() self:show_home_all_books() end,
+        on_history=function() self:show_home_reading_history() end,
+        on_settings=function() self:_show_home_settings_center() end,
         section_cache_key=active,
         section_revision=self:_home_section_cache_revision(active,shelf_page),
         on_close=function(current)

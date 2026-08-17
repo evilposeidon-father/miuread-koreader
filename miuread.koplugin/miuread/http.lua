@@ -702,6 +702,14 @@ local function is_auth_error(value)
         or text:find("登录状态已失效", 1, true) ~= nil
 end
 
+-- Deliver an authentication failure to a host object implementing
+-- on_auth_required (pcall-wrapped so a throwing handler cannot break the
+-- caller). Returns true when a handler was invoked.
+local function notify_auth_error(host, channel, err)
+    if type(host) ~= "table" or type(host.on_auth_required) ~= "function" then return false end
+    return pcall(host.on_auth_required, host, channel, err)
+end
+
 local function is_forbidden_error(value)
     return tostring(value or ""):lower():find("http 403",1,true)~=nil
 end
@@ -789,6 +797,7 @@ end
 Http.auth_error_code = auth_error_code
 Http.auth_error_message = auth_error_message
 Http.is_auth_error = is_auth_error
+Http.notify_auth_error = notify_auth_error
 Http.is_forbidden_error = is_forbidden_error
 Http.is_network_error = is_network_error
 Http.is_rate_limit_error = is_rate_limit_error

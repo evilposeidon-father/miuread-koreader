@@ -8,9 +8,12 @@ local logger = require("logger")
 local lfs = require("libs/libkoreader-lfs")
 local Config = require("miuread.config")
 local HomeData = require("miuread.home_data")
+local ReadTimeLedger = require("miuread.read_time_ledger")
 local Json = require("miuread.json")
 local U = require("miuread.util")
 local UiScale = require("miuread.ui_scale")
+local OpLog = require("miuread.oplog")
+local DiagnosticContext = require("miuread.diagnostic_context")
 
 local Screen = Device.screen
 
@@ -96,6 +99,24 @@ function Plugin:export_diagnostic_bundle()
     end
     write("download-diagnostics.txt", "copied=" .. tostring(copied))
 
+    -- Recent operation history + shared context (same source the crash report
+    -- uses): gives manual bundles a "what happened before the failure" view.
+    write("oplog.txt", OpLog.text(200))
+    write("context.txt", DiagnosticContext.render_text(DiagnosticContext.collect({
+        version = Config.VERSION,
+        schema = Config.SCHEMA,
+        channel = Config.UPDATE_CHANNEL,
+        runtime = self._runtime_mode or "unknown",
+        logged_in = self:logged_in() == true,
+        time = os.date("%Y-%m-%d %H:%M:%S"),
+        device = {
+            model = tostring(Device.model or "unknown"),
+            firmware = tostring(Device.firmware_rev or "unknown"),
+            screen = tostring(Screen:getWidth()) .. "x" .. tostring(Screen:getHeight()),
+        },
+        preferences = preferences,
+    })))
+
     self:info("诊断包已生成：\n" .. root)
     logger.info("[MiuRead][Diagnostic] bundle exported", root, "download_diag=", tostring(copied))
     return true
@@ -180,6 +201,9 @@ function Plugin:restore_config_backup()
 end
 
 function Plugin:show_reading_report()
+    -- Same calculation as the 我的页 duration card: KOReader reading stats.
+    -- Device feedback wanted the page and the report to agree, so both read
+    -- the same source (and the page refresh button recomputes it).
     local stats = HomeData.reading_stats(true)
     if not stats then
         self:info("暂时没有阅读统计数据。\n\n开始阅读后，KOReader 会自动记录阅读时长和页数。")

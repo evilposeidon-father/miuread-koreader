@@ -378,7 +378,6 @@ function Plugin:sync_settings_menu()
         {text="阅读进度",post_text=self.store:preferences().sync.progress_enabled~=false and "已开启" or "已关闭",checked_func=function() return self.store:preferences().sync.progress_enabled~=false end,keep_menu_open=true,callback=function() self:toggle_progress_sync() end},
         {text="阅读时间",post_text=self.store:preferences().sync.time_enabled==true and "已开启" or "已关闭",checked_func=function() return self.store:preferences().sync.time_enabled==true end,keep_menu_open=true,callback=function() self:toggle_time_sync() end},
         {text="位置冲突处理",post_text=self:_progress_conflict_mode_label(),sub_item_table_func=function() return self:_progress_conflict_mode_menu() end},
-        {text="本地划线与想法",post_text="改动后自动上传",enabled=false},
         {text="新想法云端可见范围",post_text=self:annotation_sync_visibility_label(),sub_item_table_func=function() return self:annotation_sync_visibility_menu() end},
         {text="同步成功提醒",checked_func=function() return self:_sync_success_notice_enabled() end,keep_menu_open=true,callback=function() self:toggle_sync_success_notice() end},
         {text="同步诊断",sub_item_table_func=function() return self:sync_diagnostics_menu() end},
@@ -559,10 +558,22 @@ function Plugin:ensure_read_report_progress(reason,automatic)
             if remote.conflict then
                 local webp=remote.web and math.floor((tonumber(remote.web.percent) or 0)+.5) or nil
                 local agentp=remote.agent and math.floor((tonumber(remote.agent.percent) or 0)+.5) or nil
-                self:_save_progress_state(id,"source_conflict","云端两个来源的位置不一致",localp,webp or agentp)
-                self.sync.state="verification_required"
-                self.sync.last_stage="等待选择云端位置来源"
-                self:on_remote_source_conflict(id,localp,remote,automatic==true)
+                -- Two cloud channels disagree. WeRead itself never asks the
+                -- user; pick the newer channel automatically (ties prefer the
+                -- official gateway) and jump silently.
+                local chosen=ProgressDecision.choose_source(remote.web,remote.agent)
+                local chosenp=chosen and math.floor((tonumber(chosen.percent) or 0)+.5) or nil
+                logger.warn("[MiuRead][Progress] auto source conflict policy",
+                    "book=",id,"web=",tostring(webp),"agent=",tostring(agentp),
+                    "chosen=",tostring(chosen and chosen.source or "none"))
+                self:_save_progress_state(id,"source_conflict","云端来源不一致，已自动选择较新来源",localp,chosenp)
+                if chosen then
+                    self:_use_remote_position(id,localp,chosen,true)
+                else
+                    self.sync.state="verification_required"
+                    self.sync.last_stage="云端位置来源不可用"
+                    self.sync:end_progress_sync("云端位置来源不可用，阅读时间暂缓上传")
+                end
                 return
             end
             local remotep=math.floor((tonumber(remote.percent) or 0)+.5)
@@ -582,8 +593,7 @@ function Plugin:ensure_read_report_progress(reason,automatic)
             end
             -- Default conflict policy is silent: adopt the cloud position.
             -- Users who prefer the old prompt can switch to "ask" in sync
-            -- settings. Cloud-source conflicts (web vs agent) still ask because
-            -- there is no meaningful automatic preference between the two.
+            -- settings. Web-vs-agent source conflicts are auto-resolved above.
             local conflict_mode=tostring(self.store:preferences().sync.progress_conflict_mode or "auto_cloud")
             local should_adopt,adopt_pct=ProgressDecision.conflict_policy(conflict_mode,cmp,remote)
             if should_adopt then
