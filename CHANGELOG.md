@@ -13,6 +13,7 @@
 - 架构 self 字段命名空间化：4 个跨 controller 共享字段统一加 `_miuread_` 全局前缀（_miuread_auto_update_check_running / _miuread_repair_prompt_open / _miuread_shelf_refresh_generation / _miuread_thought_popup_busy），消除 plugin_home/plugin_update、plugin_reader_lifecycle_io/plugin_repair、plugin_home/plugin_shelf、plugin_preferences/plugin_thought_popup 之间的静默覆盖风险；新增结构守卫 test_no_unprefixed_cross_controller_self_fields（28 项守卫全绿，禁止未来跨 controller 字段无全局前缀）。
 - 架构 plugin_navigation.onReaderReady 拆分：把 post-ready 后台 worker（sync progress pull + device-state refresh + 尺寸恢复）抽为 `_schedule_reader_ready_workers`，onReaderReady 从 171 行降至 ~137 行，ready 路径状态机保持可读。
 - 工程 CONTRIBUTING.md 新增「命名规则」章节：controller 方法/self 字段全局前缀、深模块模板、Reader/Home/Sync 命名边界（content_reader vs plugin_reader vs reader_*；plugin_home 四 controller 职责分界；sync.lua vs plugin_sync vs 深模块）。
+- 测试 Lua 5.1 无头套件（含 smoke 主插件加载）增至 309 个用例、结构守卫 28 项全绿：新增 test_plugin_reader_lifecycle_io（5 用例）/ test_reader_geometry（8 用例）共 13 个纯逻辑 + 控制器安装用例；test_no_unprefixed_cross_controller_self_fields 新增守卫（禁止未来跨 controller 字段无全局前缀）；plugin_home_content、plugin_navigation、store_defaults、progress_position 等既有拆分继续全绿。
 
 ## 4.6.3 - Unreleased
 
