@@ -5,6 +5,7 @@ Stubs.install()
 
 local ExternalSync = require("miuread.external_annotation_sync")
 local ReaderController = require("miuread.plugin_reader")
+local HighlightPolicyController = require("miuread.highlight_policy")
 local AnnotationSync = require("miuread.annotation_sync")
 
 local T = {}
@@ -99,6 +100,7 @@ end
 local function fake_reader_plugin()
     local plugin = {}
     ReaderController.install(plugin)
+    HighlightPolicyController.install(plugin)
     local highlight = {
         prompt_seen = nil,
         selected_text = { text = "测试", pos0 = { page = 1 }, pos1 = { page = 1 } },

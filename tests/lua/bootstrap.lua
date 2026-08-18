@@ -99,6 +99,8 @@ install("device", {
     hasFrontlight = function() return true end,
     isTouchDevice = function() return true end,
     hasKeys = function() return false end,
+    canSuspend = function() return true end,
+    getPowerDevice = function() return nil end,
 })
 
 install("ui/font", {

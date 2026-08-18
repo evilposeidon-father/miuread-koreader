@@ -16,6 +16,8 @@ local ProgressDecision = require("miuread.progress_decision")
 local ReportDaemon = require("miuread.report_daemon")
 local U = require("miuread.util")
 local OpLog = require("miuread.oplog")
+local SyncCatalogPrepare = require("miuread.sync_catalog_prepare")
+local SyncInverseMapping = require("miuread.sync_inverse_mapping")
 
 local Sync = {}
 Sync.__index = Sync
@@ -323,113 +325,45 @@ function Sync:_prefer_inverse_cloud_mapping(record, position)
         and tostring(position.offset_basis or position.position_basis or "") == "wr_data_co"
     local local_map = type(record.record.chapter_map) == "table" and record.record.chapter_map or {}
     local catalog = self:_precision_catalog(record)
-    -- Whole-book inverse mapping is still useful for `pr`, but native Web
-    -- Reader `co` is source-coordinate based and must never be overwritten by
-    -- a wordCount-space estimate.
-    if record.record.partial_range == true
-        or not BookIntegrity.maps_equivalent(local_map, catalog) then
-        position.inverse_mapping_used = false
-        position.inverse_mapping_reason = "local_map_not_full_catalog"
+    local ok, reason = SyncInverseMapping.should_use_inverse_mapping(record, position, local_map, catalog)
+    if not ok then
+        if reason then
+            position.inverse_mapping_used = false
+            position.inverse_mapping_reason = reason
+        end
         return position
     end
 
     local ratio = self:local_ratio()
-    if ratio == nil then
+    local inverse = ratio ~= nil and self:position(record, ratio, local_map, catalog) or nil
+    local decision = SyncInverseMapping.compute_inverse_decision(position, record, inverse, ratio, native_offset)
+    if decision.anchors then
+        position.source_anchor_offset = decision.anchors.source_anchor_offset
+        position.source_anchor_progress = decision.anchors.source_anchor_progress
+        position.source_anchor_chapter_ratio = decision.anchors.source_anchor_chapter_ratio
+        position.inverse_offset = decision.anchors.inverse_offset
+        position.inverse_progress = decision.anchors.inverse_progress
+        position.inverse_delta = decision.anchors.inverse_delta
+        position.local_global_ratio = decision.anchors.local_global_ratio
+    end
+    if decision.action == "source" then
         position.inverse_mapping_used = false
-        position.inverse_mapping_reason = "local_global_ratio_missing"
+        position.inverse_mapping_reason = decision.reason
+        if decision.inverse_chapter_uid then position.inverse_chapter_uid = decision.inverse_chapter_uid end
+        if decision.reason == "inverse_chapter_mismatch" then
+            logger.info("[MiuRead][ProgressOffset]",
+                "book=", tostring(record.book and record.book.book_id or ""),
+                "chapter=", decision.source_uid ~= "" and decision.source_uid or "-",
+                decision.native_offset and "native_co=" or "source_co=", tostring(decision.source_offset or "-"),
+                "inverse_co=", tostring(decision.inverse_offset or "-"),
+                decision.native_offset and "selected=native" or "selected=source", "reason=chapter_mismatch")
+        end
         return position
     end
-    local inverse = self:position(record, ratio, local_map, catalog)
-    if type(inverse) ~= "table" or inverse.safe ~= true
-        or tostring(inverse.chapter_uid or "") == "" then
-        position.inverse_mapping_used = false
-        position.inverse_mapping_reason = tostring(type(inverse) == "table"
-            and inverse.mapping_error or "inverse_position_unavailable")
-        return position
-    end
-
-    local source_uid = tostring(position.chapter_uid or "")
-    local inverse_uid = tostring(inverse.chapter_uid or "")
-    local source_offset = tonumber(position.chapter_offset or position.offset)
-    local inverse_offset = tonumber(inverse.chapter_offset or inverse.offset)
-    position.source_anchor_offset = source_offset
-    position.source_anchor_progress = tonumber(position.progress)
-    position.source_anchor_chapter_ratio = tonumber(position.chapter_ratio)
-    position.inverse_offset = inverse_offset
-    position.inverse_progress = tonumber(inverse.progress)
-    position.inverse_delta = source_offset ~= nil and inverse_offset ~= nil
-        and (inverse_offset - source_offset) or nil
-    position.local_global_ratio = U.clamp(tonumber(ratio) or 0, 0, 1)
-
-    if source_uid == "" or inverse_uid == "" or source_uid ~= inverse_uid then
-        position.inverse_mapping_used = false
-        position.inverse_mapping_reason = "inverse_chapter_mismatch"
-        position.inverse_chapter_uid = inverse_uid
-        logger.info("[MiuRead][ProgressOffset]",
-            "book=", tostring(record.book and record.book.book_id or ""),
-            "chapter=", source_uid ~= "" and source_uid or "-",
-            native_offset and "native_co=" or "source_co=", tostring(source_offset or "-"),
-            "inverse_co=", tostring(inverse_offset or "-"),
-            native_offset and "selected=native" or "selected=source", "reason=chapter_mismatch")
-        return position
-    end
-
-    if inverse_offset == nil then
-        position.inverse_mapping_used = false
-        position.inverse_mapping_reason = "inverse_offset_missing"
-        return position
-    end
-
-    if native_offset then
-        -- Native co remains untouched. Only the whole-book progress percentage
-        -- adopts the continuous inverse whole-book ratio so `pr` stays aligned
-        -- with beta43's long-book precision improvements.
-        position.progress = tonumber(inverse.progress) or position.progress
-        position.chapter_word_count = tonumber(inverse.chapter_word_count) or position.chapter_word_count
-        position.total_word_count = tonumber(inverse.total_word_count) or position.total_word_count
-        position.words_before = tonumber(inverse.words_before) or position.words_before
-        position.inverse_mapping_used = true
-        position.inverse_mapping_role = "progress_only"
-        logger.info("[MiuRead][ProgressOffset]",
-            "book=", tostring(record.book and record.book.book_id or ""),
-            "chapter=", source_uid,
-            "native_co=", tostring(source_offset or "-"),
-            "source_word_co=", tostring(position.source_word_offset or "-"),
-            "inverse_co=", tostring(inverse_offset),
-            "global_ratio=", string.format("%.8f", tonumber(position.local_global_ratio) or 0),
-            "ratio_source=", tostring(self.last_local_ratio_source or "-"),
-            "selected=native")
-        return position
-    end
-
-    -- Legacy beta43 fallback: when native source coordinates are unavailable,
-    -- retain the proven full-book inverse mapping for chapter offset.
-    position.offset = inverse_offset
-    position.chapter_offset = inverse_offset
-    position.progress = tonumber(inverse.progress) or position.progress
-    position.chapter_word_count = tonumber(inverse.chapter_word_count) or position.chapter_word_count
-    position.total_word_count = tonumber(inverse.total_word_count) or position.total_word_count
-    position.words_before = tonumber(inverse.words_before) or position.words_before
-    if tonumber(position.chapter_word_count) and tonumber(position.chapter_word_count) > 0 then
-        position.chapter_ratio = U.clamp(inverse_offset / tonumber(position.chapter_word_count), 0, 1)
-        position.chapter_percent = math.floor(position.chapter_ratio * 100 + 0.5)
-    end
-    position.source = "inverse_cloud_map"
-    position.position_basis = "inverse_remote_chapter_offset"
-    position.offset_basis = "inverse_remote_chapter_offset"
-    position.native_offset = false
-    position.inverse_mapping_used = true
-
-    logger.info("[MiuRead][ProgressOffset]",
-        "book=", tostring(record.book and record.book.book_id or ""),
-        "chapter=", source_uid,
-        "source_co=", tostring(source_offset or "-"),
-        "inverse_co=", tostring(inverse_offset),
-        "delta=", tostring(position.inverse_delta or "-"),
-        "global_ratio=", string.format("%.8f", tonumber(position.local_global_ratio) or 0),
-        "ratio_source=", tostring(self.last_local_ratio_source or "-"),
-        "selected=inverse")
-    return position
+    return SyncInverseMapping.merge_inverse_into_position(position, inverse, native_offset, {
+        book_id = tostring(record.book and record.book.book_id or ""),
+        ratio_source = tostring(self.last_local_ratio_source or "-"),
+    })
 end
 function Sync:_precision_catalog(record)
     local catalog = select(1, self:_progress_catalog(record))
@@ -439,55 +373,30 @@ end
 function Sync:_prepare_progress_catalog(callback)
     local record = self:record()
     if not record then return false, "position_context_missing" end
-    local book_id = tostring(record.book and record.book.book_id or "")
-    if book_id == "" then return false, "book_id_missing" end
-    local auth = self.store:auth()
-    local account = type(auth.account) == "table" and auth.account or {}
-    local login_snapshot = tostring(auth.login_session_id or "")
-    local vid_snapshot = tostring(account.vid or "")
-    if login_snapshot == "" or vid_snapshot == "" then return false, "authentication_required" end
-
-    local worker
-    if self.identity_async and self.identity_async:available() and not self.identity_async:busy() then
-        worker = self.identity_async
-    elseif self.async and self.async:available() and not self.async:busy() then
-        worker = self.async
-    elseif (self.identity_async and self.identity_async:busy()) or (self.async and self.async:busy()) then
-        return false, "catalog_worker_busy"
-    else
-        return false, "catalog_worker_unavailable"
-    end
-
-    local generation = tonumber(self.record_generation or 0) or 0
-    local path = tostring(record.path or "")
-    local core_hash = self:_core_map_hash(record)
-    local session = self.store:session(book_id) or {}
-    local saved = type(session.legacy_report_context) == "table" and session.legacy_report_context or nil
-    local context_matches = saved ~= nil
-        and tostring(session.report_login_session_id or "") == login_snapshot
-        and (tostring(session.report_core_map_hash or "") == ""
-            or tostring(session.report_core_map_hash or "") == tostring(core_hash or ""))
-    local legacy_book = U.copy(context_matches and saved or {})
-    legacy_book.book_id = book_id
-    legacy_book.title = record.book.title
+    local input, input_error = SyncCatalogPrepare.prepare_catalog_input(record, {
+        auth = self.store:auth(),
+        session = self.store:session(tostring(record.book and record.book.book_id or "")),
+        core_map_hash = self:_core_map_hash(record),
+        local_ratio = self:local_ratio(),
+        record_generation = self.record_generation,
+    })
+    if not input then return false, input_error end
+    local legacy_book = input.legacy_book
     self:_decorate_legacy_context(legacy_book, record)
+    local chosen = SyncCatalogPrepare.select_catalog_worker(self.identity_async, self.async)
+    if not chosen.worker then return false, chosen.reason_if_busy end
+    local worker = chosen.worker
+    local book_id = input.book_id
+    local login_snapshot = input.login_snapshot
+    local vid_snapshot = input.vid_snapshot
+    local core_hash = input.core_hash
+    local generation = input.generation
+    local path = input.path
+    local session = input.session
+    local ratio_snapshot = input.ratio_snapshot
+    local book_title = input.book_title
+    local auth = input.auth
 
-    -- Even before the full catalog exists, preserve the current local chapter
-    -- identity so the context worker can choose a sensible reader chapter.
-    local local_guess = map_position((record.record and record.record.chapter_map) or {},
-        self:local_ratio() or 0, {chapter_uid=record.record and record.record.chapter_uid, summary=record.book.title})
-    if type(local_guess) == "table" then
-        legacy_book.local_chapter_uid = local_guess.chapter_uid
-        legacy_book.local_chapter_idx = local_guess.chapter_index
-        legacy_book.local_chapter_offset = local_guess.offset
-        legacy_book.local_native_chapter_offset = false
-        legacy_book.local_chapter_offset_basis = "catalog_word_fallback"
-        local row = local_chapter_by_uid(record.record and record.record.chapter_map or {}, local_guess.chapter_uid)
-        legacy_book.local_chapter_word_count = tonumber(row and (row.word_count or row.wordCount) or 0) or 0
-    end
-
-    local ratio_snapshot = self:local_ratio() or 0
-    local book_title = tostring(record.book.title or "")
     logger.info("[MiuRead][ProgressMap] catalog prepare started",
         "book=", book_id, "mode=", self:_record_mode(record),
         "local_chapters=", tostring(#((record.record and record.record.chapter_map) or {})),
@@ -542,31 +451,11 @@ function Sync:_prepare_progress_catalog(callback)
         -- stable for the rest of the verification TTL. A transient Web Reader
         -- catalog that adds/removes structural chapters must not silently change
         -- the whole-book percentage basis from e.g. 22 to 23 chapters.
-        local verified_at=tonumber(session.verified_at or 0) or 0
-        local verified_age=os.time()-verified_at
-        local saved_verified=session.remote_verified==true
-            and verified_at>0 and verified_age>=0 and verified_age<=(tonumber(self.verification_ttl) or 14400)
-            and type(saved)=="table" and saved.catalog_complete==true
-            and type(saved.chapters)=="table" and #saved.chapters>0
-        if saved_verified then
-            local saved_hash=BookIntegrity.core_map_hash(book_id,saved.chapters,{})
-            local new_hash=BookIntegrity.core_map_hash(book_id,context.chapters,{})
-            if saved_hash~="" and new_hash~="" and saved_hash~=new_hash then
-                logger.warn("[MiuRead][ProgressMap] catalog drift ignored during verified session",
-                    "book=",book_id,"kept=",tostring(#saved.chapters),
-                    "new=",tostring(#context.chapters))
-                context=U.copy(saved)
-                context.core_map_hash=core_hash
-            end
-        end
+        local kept = SyncCatalogPrepare.detect_catalog_drift(
+            session, context, core_hash, tonumber(self.verification_ttl) or 14400, book_id, os.time())
+        if kept then context = kept end
 
-        if value.cookies_changed and type(value.cookies) == "table" then
-            local latest_auth = self.store:auth()
-            latest_auth.cookies = value.cookies
-            if value.wr_ticket_changed then latest_auth.wr_ticket = value.wr_ticket end
-            if value.wr_wrpa_changed then latest_auth.wr_wrpa = value.wr_wrpa end
-            self.store:save_auth(latest_auth)
-        end
+        SyncCatalogPrepare.apply_cookies_change(self.store, self.store:auth(), value)
         self.daemon_context = U.copy(context)
         self.store:save_session(book_id,{
             legacy_report_context=U.copy(context),

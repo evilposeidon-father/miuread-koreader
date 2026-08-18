@@ -156,7 +156,8 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginSync", "plugin_sync.lua", ["ensure_read_report_progress", "manual_sync", "show_sync_status"]),
             ("PluginSyncCenter", "plugin_sync_center.lua", ["_ensure_sync_scheduler", "_sync_scheduler_request", "_sync_scheduler_run_now", "_sync_gate_allowed"]),
             ("PluginDownload", "plugin_download.lua", ["download", "show_downloads", "show_download_cleanup_dialog"]),
-            ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu", "_apply_miuread_highlight_defaults"]),
+            ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu", "_reader_panel_active"]),
+            ("PluginHighlightPolicy", "highlight_policy.lua", ["_apply_miuread_highlight_defaults", "_apply_miuread_highlight_action_policy", "highlight_selection_policy"]),
             ("PluginSearchMp", "plugin_search_mp.lua", ["search", "search_dialog", "open_or_download_mp_article"]),
             ("PluginRepair", "plugin_repair.lua", ["repair_current_book", "show_repair_history", "redownload_current"]),
             ("PluginPreferences", "plugin_preferences.lua", ["settings_menu", "performance_settings_menu", "local_library_settings_menu"]),
@@ -168,10 +169,12 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginNavigation", "plugin_navigation.lua", ["_reader_file", "return_to_miuread_home", "_request_reader_close", "onHome", "onReaderReady", "onSetDimensions"]),
             ("PluginNativeMenu", "plugin_native_menu.lua", ["_guard_native_koreader_menu", "_show_native_koreader_menu", "_finish_native_menu_visit"]),
             ("PluginShelf", "plugin_shelf.lua", ["load_shelf", "show_shelf", "show_mp_shelf"]),
-            ("PluginHome", "plugin_home.lua", ["_home_preferences", "_home_begin_resume", "home_mode_menu", "_home_schedule_cover_derivatives"]),
+            ("PluginHome", "plugin_home.lua", ["_home_begin_resume", "home_mode_menu", "_home_schedule_cover_derivatives"]),
             ("PluginHomeCustomize", "plugin_home_customize.lua", ["home_customization_menu", "home_source_order_menu", "_home_group_settings_menu"]),
             ("PluginUiMenus", "plugin_ui_menus.lua", ["_show_miuread_menu", "_show_home_bubble_menu", "notice_settings_menu"]),
             ("PluginHomeContent", "plugin_home_content.lua", ["_home_all_rows", "show_home_local_library", "_home_scan_local", "_show_miuread_home_now"]),
+            ("PluginHomeLocalInline", "plugin_home_local_inline.lua", ["_home_local_inline_rows", "_home_local_inline_navigate", "_home_local_empty_text"]),
+            ("PluginHomePreferencesIO", "plugin_home_preferences_io.lua", ["_home_preferences", "_save_ui_preferences", "_flush_home_preferences"]),
         ]:
             module_path = f"miuread.koplugin/miuread/{file_name}"
             self.assertIn(f'local {module_name}=require("miuread.{file_name[:-4]}")', main)
@@ -238,6 +241,8 @@ class MainLuaStructureTests(unittest.TestCase):
 
         for name in [
             "plugin_maintenance.lua",
+            "sync_catalog_prepare.lua",
+            "sync_inverse_mapping.lua",
             "plugin_update.lua",
             "plugin_sync.lua",
             "plugin_sync_center.lua",

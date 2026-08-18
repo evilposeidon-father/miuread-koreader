@@ -75,6 +75,24 @@ local fake_modules = {
     ["ssl.https"] = {
         request = function() return nil, "offline", nil end,
     },
+    ["device"] = {
+        canSuspend = function() return true end,
+        hasFrontlight = function() return false end,
+        getPowerDevice = function() return nil end,
+        screen = {
+            getWidth = function() return 600 end,
+            getHeight = function() return 800 end,
+            getRotationMode = function() return 0 end,
+        },
+    },
+    ["miuread.local_library"] = {
+        normalize = function(value) return tostring(value or "") end,
+        basename = function(value)
+            value = tostring(value or "")
+            return value:match("([^/]+)$") or value
+        end,
+        is_likely_dictionary = function() return false end,
+    },
 }
 
 local function json_escape(value)
