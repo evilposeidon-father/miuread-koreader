@@ -5,6 +5,15 @@
 ## Unreleased
 
 - 暂无。
+
+## 4.6.4 - Unreleased
+
+- 架构 抽出 `miuread.plugin_reader_lifecycle_io` 控制器：从 main.lua 迁移 interactive network（_run_interactive_network / _request_catalog / _wait_for_network / _cancel_network_waits / _interactive_network_context(_valid) / _apply_interactive_auth / _cancel_interactive_network）与 reader lifecycle（_finalize_reader_instance_close / _start_reader_rebuild_candidate / _finish_reader_rebuild_candidate / _reader_rebuild_ready_state / _reader_rebuild_cancel）共 12 个方法，main.lua 2852 → 2412 行（-440）；新增 test_plugin_reader_lifecycle_io（5 用例，含 interactive_child_store 的 auth 会话一致性验证）。
+- 架构 抽出 `miuread.reader_geometry` 深模块：plugin_reader 的 _reader_progress_percent / _reader_current_page / _reader_toc_items 纯逻辑下沉（progress_percent / current_page / nearest_toc_index / normalize_toc_items 4 纯函数），plugin_reader 3426 → 3389 行（-37）；新增 test_reader_geometry（8 用例）。
+- 架构 self 字段命名空间化：4 个跨 controller 共享字段统一加 `_miuread_` 全局前缀（_miuread_auto_update_check_running / _miuread_repair_prompt_open / _miuread_shelf_refresh_generation / _miuread_thought_popup_busy），消除 plugin_home/plugin_update、plugin_reader_lifecycle_io/plugin_repair、plugin_home/plugin_shelf、plugin_preferences/plugin_thought_popup 之间的静默覆盖风险；新增结构守卫 test_no_unprefixed_cross_controller_self_fields（28 项守卫全绿，禁止未来跨 controller 字段无全局前缀）。
+- 架构 plugin_navigation.onReaderReady 拆分：把 post-ready 后台 worker（sync progress pull + device-state refresh + 尺寸恢复）抽为 `_schedule_reader_ready_workers`，onReaderReady 从 171 行降至 ~137 行，ready 路径状态机保持可读。
+- 工程 CONTRIBUTING.md 新增「命名规则」章节：controller 方法/self 字段全局前缀、深模块模板、Reader/Home/Sync 命名边界（content_reader vs plugin_reader vs reader_*；plugin_home 四 controller 职责分界；sync.lua vs plugin_sync vs 深模块）。
+
 ## 4.6.3 - Unreleased
 
 - 架构 sync.lua 拆分深模块第一批：抽出 `miuread.sync_catalog_prepare` 深模块（5 纯函数：prepare_catalog_input / select_catalog_worker / merge_legacy_context / detect_catalog_drift / apply_cookies_change），`miuread.sync_inverse_mapping` 深模块（3 决策函数 should_use_inverse_mapping / compute_inverse_decision + merge_inverse_into_position）；sync.lua 3258 → 3146 行（-112），`_prepare_progress_catalog`（145 行）+ `_prefer_inverse_cloud_mapping`（116 行）改为薄委托，仅保留 worker:run() 调用与 callback 装配。所有 [MiuRead][ProgressMap] / [ProgressOffset] 日志文案、错误码、回调返回值结构原样保留；callback stale 检查与 saved/verified catalog drift 决策下沉到 prepare 模块。

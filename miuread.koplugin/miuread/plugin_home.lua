@@ -634,7 +634,7 @@ function Plugin:_home_freeze_for_suspend()
     self._home_scan_generation=(tonumber(self._home_scan_generation) or 0)+1
     self._home_metadata_generation=(tonumber(self._home_metadata_generation) or 0)+1
     self._home_cover_generation=(tonumber(self._home_cover_generation) or 0)+1
-    self._shelf_refresh_generation=(tonumber(self._shelf_refresh_generation) or 0)+1
+    self._miuread_shelf_refresh_generation=(tonumber(self._miuread_shelf_refresh_generation) or 0)+1
     self._home_refreshing=false
     self._home_remote_refreshing=false
     self._home_cover_inflight={}
@@ -647,7 +647,7 @@ function Plugin:_home_freeze_for_suspend()
     if self.annotation_async then self.annotation_async:cancel("device suspended") end
     if self.updater_async then
         self.updater_async:cancel("device suspended")
-        self._auto_update_check_running=false
+        self._miuread_auto_update_check_running=false
     end
     if self.sync_summary_async then self.sync_summary_async:cancel("device suspended") end
     self:_home_unschedule_task("_home_sync_summary_task")

@@ -24,6 +24,8 @@ local suites = {
     "test_highlight_policy",
     "test_plugin_home_preferences_io",
     "test_plugin_home_preferences_io_crash",
+    "test_plugin_reader_lifecycle_io",
+    "test_reader_geometry",
     "test_home_network_metadata",
     "test_content_classify",
     "test_annotation_text",

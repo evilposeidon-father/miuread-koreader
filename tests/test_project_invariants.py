@@ -157,6 +157,7 @@ class MainLuaStructureTests(unittest.TestCase):
             ("PluginSyncCenter", "plugin_sync_center.lua", ["_ensure_sync_scheduler", "_sync_scheduler_request", "_sync_scheduler_run_now", "_sync_gate_allowed"]),
             ("PluginDownload", "plugin_download.lua", ["download", "show_downloads", "show_download_cleanup_dialog"]),
             ("PluginReader", "plugin_reader.lua", ["show_reader_quick_panel", "show_reader_control_center", "reader_quick_actions_menu", "_reader_panel_active"]),
+            ("PluginReaderLifecycleIO", "plugin_reader_lifecycle_io.lua", ["_run_interactive_network", "_request_catalog", "_finalize_reader_instance_close", "_start_reader_rebuild_candidate", "_reader_rebuild_cancel"]),
             ("PluginHighlightPolicy", "highlight_policy.lua", ["_apply_miuread_highlight_defaults", "_apply_miuread_highlight_action_policy", "highlight_selection_policy"]),
             ("PluginSearchMp", "plugin_search_mp.lua", ["search", "search_dialog", "open_or_download_mp_article"]),
             ("PluginRepair", "plugin_repair.lua", ["repair_current_book", "show_repair_history", "redownload_current"]),
@@ -184,6 +185,31 @@ class MainLuaStructureTests(unittest.TestCase):
             for method in methods:
                 self.assertIn(f"function Plugin:{method}(", module)
 
+    def test_no_unprefixed_cross_controller_self_fields(self):
+        # Self fields assigned by two different controllers share one Plugin
+        # instance. An unprefixed name can silently shadow another controller's
+        # state (the 4.6.2 crash was a missing-import, but shadowing is the same
+        # class of invisible-wiring bug). All multi-controller fields must use a
+        # recognized global prefix so ownership is greppable at a glance.
+        import collections
+        import re
+        allowed_prefixes = (
+            "_miuread_", "_home_", "_reader_", "_sync_", "_download_",
+            "_shelf_", "_thought_", "_progress_", "_annotation_", "_external_",
+        )
+        owner = collections.defaultdict(set)
+        for path in sorted((PLUGIN / "miuread").glob("plugin_*.lua")):
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"self\.(\w+)\s*=", text):
+                owner[match.group(1)].add(path.name)
+        offenders = []
+        for field, files in sorted(owner.items()):
+            if len(files) > 1 and not field.startswith(allowed_prefixes):
+                offenders.append(f"{field} -> {sorted(files)}")
+        self.assertEqual([], offenders,
+            "unprefixed self fields shared across controllers (shadowing risk):\n"
+            + "\n".join(offenders))
+
     def test_split_controllers_declare_used_modules(self):
         # The controllers moved code out of main.lua but kept the original
         # lexical references. A missing require becomes a nil global on the
@@ -203,6 +229,7 @@ class MainLuaStructureTests(unittest.TestCase):
             "Menu", "MigrationProgress", "MP", "NetworkMetadata", "Orientation",
             "PathChooser", "PerformanceMode", "PluginMenu", "PluginSettings",
             "ProgressDecision", "Protocol", "Reader", "ReaderControlCenter", "ReaderFrontlightDialog",
+            "Session",
             "ReaderListDialog", "ReaderProgressDialog", "ReaderSettingsDialog",
             "ReaderTocDialog", "ReaderToolbar", "ReaderTypographyDialog",
             "ScreenshotMode", "Scheduler", "ShelfView", "StatusToast", "Store", "Sync",

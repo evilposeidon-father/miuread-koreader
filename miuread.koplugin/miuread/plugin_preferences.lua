@@ -362,7 +362,7 @@ function Plugin:_schedule_performance_prompt(delay)
         if self._performance_prompt_pending~=pending then return end
         if home_exiting() or UIManager._exit_code~=nil
             or home_session().suspended==true or self._miuread_suspended==true then return end
-        if reader_close_active() or self._thought_popup_busy==true then
+        if reader_close_active() or self._miuread_thought_popup_busy==true then
             attempts=attempts+1
             if attempts<8 then UIManager:scheduleIn(.6,task) end
             return

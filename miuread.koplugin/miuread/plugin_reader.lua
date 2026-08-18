@@ -33,6 +33,7 @@ local ReadTimeLedger = require("miuread.read_time_ledger")
 local HighlightPolicy = require("miuread.highlight_policy")
 local ExternalAnnotationParse = require("miuread.external_annotation_parse")
 local ScreenshotMode = Lazy("miuread.screenshot_mode")
+local ReaderGeometry = require("miuread.reader_geometry")
 
 local _ = Text.tr
 
@@ -728,23 +729,7 @@ function Plugin:_reader_toolbar_cached_percent()
 end
 
 function Plugin:_reader_progress_percent()
-    local ui=self.ui
-    local document=ui and ui.document
-    if not ui or not document then return nil end
-    local current,total
-    if type(ui.getCurrentPage)=="function" and type(document.getPageCount)=="function" then
-        local ok_current,value_current=pcall(ui.getCurrentPage,ui)
-        local ok_total,value_total=pcall(document.getPageCount,document)
-        if ok_current and ok_total then current,total=tonumber(value_current),tonumber(value_total) end
-    end
-    if current and total and total>0 then
-        return math.max(0,math.min(100,current/total*100))
-    end
-    local rolling=ui.rolling
-    local pos=rolling and tonumber(rolling.current_page or rolling.current_pos)
-    local pages=rolling and tonumber(rolling.page_count or rolling.full_height)
-    if pos and pages and pages>0 then return math.max(0,math.min(100,pos/pages*100)) end
-    return nil
+    return ReaderGeometry.progress_percent(self.ui, self.ui and self.ui.document)
 end
 
 function Plugin:_reader_jump_percent(delta)
@@ -834,13 +819,7 @@ function Plugin:_show_reader_position_jump(back_callback)
     return false
 end
 function Plugin:_reader_current_page()
-    local ui=self.ui
-    if ui and type(ui.getCurrentPage)=="function" then
-        local ok,value=pcall(ui.getCurrentPage,ui)
-        if ok and tonumber(value) then return tonumber(value) end
-    end
-    local rolling=ui and ui.rolling or nil
-    return tonumber(rolling and (rolling.current_page or rolling.current_pos))
+    return ReaderGeometry.current_page(self.ui)
 end
 
 function Plugin:_reader_toc_items()
@@ -859,31 +838,15 @@ function Plugin:_reader_toc_items()
     -- Fall back to the nearest preceding ToC entry so opening the directory
     -- still follows the actual reading position.
     if current_page and not current_index then
-        local nearest_page=-math.huge
-        for index,entry in ipairs(source) do
-            local page=tonumber(entry.page or entry.pageno)
-            if page and page<=current_page and page>=nearest_page then
-                current_index=index
-                nearest_page=page
-            end
-        end
+        current_index=ReaderGeometry.nearest_toc_index(source,current_page)
     end
-    local items={}
+    local items=ReaderGeometry.normalize_toc_items(source,current_index)
     for index,entry in ipairs(source) do
-        local item=entry
-        local title=U.trim(tostring(item.title or item.text or item.name or ""))
-        if title=="" then title="未命名章节" end
-        local page=tonumber(item.page or item.pageno)
-        local xpointer=item.xpointer or item.xp
-        local destination_page=page
-        local destination_xpointer=xpointer
-        items[#items+1]={
-            title=title,
-            depth=tonumber(item.depth or item.level) or 1,
-            page=page,
-            page_label=item.page_label or (page and tostring(page) or ""),
-            current=current_index==index,
-            callback=function()
+        local item=items[index]
+        if item then
+            local destination_xpointer=entry.xpointer or entry.xp
+            local destination_page=tonumber(entry.page or entry.pageno)
+            item.callback=function()
                 local current_ui=self.ui
                 if not (current_ui and current_ui.document) then return false end
                 local link=current_ui.link
@@ -900,8 +863,8 @@ function Plugin:_reader_toc_items()
                     return true
                 end
                 return false
-            end,
-        }
+            end
+        end
     end
     return items,current_index
 end

@@ -120,10 +120,10 @@ function Plugin:_refresh_shelf_async(on_ready,silent)
         return fail("书架正在刷新，请稍后重试。")
     end
 
-    self._shelf_refresh_generation=(tonumber(self._shelf_refresh_generation) or 0)+1
-    local generation=self._shelf_refresh_generation
+    self._miuread_shelf_refresh_generation=(tonumber(self._miuread_shelf_refresh_generation) or 0)+1
+    local generation=self._miuread_shelf_refresh_generation
     local function succeed(data,mode)
-        if generation~=self._shelf_refresh_generation then return end
+        if generation~=self._miuread_shelf_refresh_generation then return end
         self:_mark_auth_channel_ok("shelf")
         local books,mp=self.library:normalize(data or {})
         self.store:save_shelf_cache({books=books,mp=mp,updated_at=os.time()})
@@ -142,7 +142,7 @@ function Plugin:_refresh_shelf_async(on_ready,silent)
         logger.info("[MiuRead][Shelf] refresh started","mode=direct")
         UIManager:scheduleIn(.05,function()
             local handled,unexpected=xpcall(function()
-                if generation~=self._shelf_refresh_generation then return end
+                if generation~=self._miuread_shelf_refresh_generation then return end
                 local ok,data=pcall(self.api.shelf,self.api,{retries=0,timeout={7,12}})
                 if not ok then error(tostring(data)) end
                 if loading then pcall(function() UIManager:close(loading) end); loading=nil end
@@ -150,7 +150,7 @@ function Plugin:_refresh_shelf_async(on_ready,silent)
             end,debug.traceback)
             self._shelf_main_busy=false
             if loading then pcall(function() UIManager:close(loading) end) end
-            if not handled and generation==self._shelf_refresh_generation then fail(unexpected) end
+            if not handled and generation==self._miuread_shelf_refresh_generation then fail(unexpected) end
         end)
         return true
     end
@@ -167,7 +167,7 @@ function Plugin:_refresh_shelf_async(on_ready,silent)
         }
         return ApiChild:new(HttpChild:new(child_store),child_store):shelf({retries=1,timeout={10,18}})
     end,function(result)
-        if generation~=self._shelf_refresh_generation then return end
+        if generation~=self._miuread_shelf_refresh_generation then return end
         if result and result.ok==true then
             succeed(result.value or {},"subprocess")
             return
@@ -577,7 +577,7 @@ function Plugin:_on_shelf_page(rows,view,page,first,last)
     self:_cache_shelf_page_covers(rows,view,page,first,last,generation,first)
 end
 function Plugin:_cancel_shelf_refresh(reason)
-    self._shelf_refresh_generation=(tonumber(self._shelf_refresh_generation) or 0)+1
+    self._miuread_shelf_refresh_generation=(tonumber(self._miuread_shelf_refresh_generation) or 0)+1
     self._shelf_main_busy=false
     if self.shelf_async then self.shelf_async:cancel(reason or "shelf closed") end
 end

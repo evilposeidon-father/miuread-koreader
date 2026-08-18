@@ -1225,6 +1225,13 @@ function Plugin:onReaderReady()
     self._progress_remote_retries={}
     self._sync_success_notified=false
     self._last_progress_submit_notice=nil
+    self:_schedule_reader_ready_workers(ready_session, had_candidate)
+end
+
+-- Post-ready background work: sync progress pull and device-state refresh run
+-- only after the first page is interactive and the reader is idle. Extracted
+-- from onReaderReady so the ready-path state machine stays readable.
+function Plugin:_schedule_reader_ready_workers(ready_session, had_candidate)
     if self._reader_sync_ready_task then
         UIManager:unschedule(self._reader_sync_ready_task)
         self._reader_sync_ready_task=nil

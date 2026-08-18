@@ -235,21 +235,21 @@ function Plugin:_run_book_repair(context,report,force)
 end
 
 function Plugin:_show_book_repair_prompt(context,report)
-    if self._repair_prompt_open then return end
-    self._repair_prompt_open=true
+    if self._miuread_repair_prompt_open then return end
+    self._miuread_repair_prompt_open=true
     local book_id=tostring(report and report.book_id or ((context.book or {}).book_id or ""))
     local signature=tostring(report and report.signature or self.book_repair:signature(context))
     local dialog
     dialog=ButtonDialog:new{title=self:_repair_message(report),title_align="center",buttons={
         {{text="立即迁移",callback=function()
-            UIManager:close(dialog); self._repair_prompt_open=false
+            UIManager:close(dialog); self._miuread_repair_prompt_open=false
             self:_run_book_repair(context,report,false)
         end}},
         {{text="稍后处理",callback=function()
-            UIManager:close(dialog); self._repair_prompt_open=false
+            UIManager:close(dialog); self._miuread_repair_prompt_open=false
         end}},
         {{text="本书不再自动提示",callback=function()
-            UIManager:close(dialog); self._repair_prompt_open=false
+            UIManager:close(dialog); self._miuread_repair_prompt_open=false
             self:_save_repair_state(book_id,{signature=signature,status="ignored",checked_at=os.time()})
         end}},
     }}

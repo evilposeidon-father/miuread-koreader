@@ -295,18 +295,18 @@ end
 function Plugin:maybe_auto_check_update(force)
     local _,update=self:_update_preferences()
     if not force and update.auto_check==false then return false end
-    if self._auto_update_check_running then return false end
+    if self._miuread_auto_update_check_running then return false end
     local now=os.time()
     local interval=math.max(21600,tonumber(update.interval) or Config.AUTO_UPDATE_INTERVAL)
     local last=tonumber(update.last_attempt_at) or 0
     if not force and now-last<interval then return false end
     if not self:is_online() then return false end
     if self.updater_async and self.updater_async:busy() then return false end
-    self._auto_update_check_running=true
+    self._miuread_auto_update_check_running=true
     update.last_attempt_at=now
     self:_save_update_preferences(update)
     local started,start_err=self:_run_update_check(true,function(manifest,err)
-        self._auto_update_check_running=false
+        self._miuread_auto_update_check_running=false
         local _,fresh=self:_update_preferences()
         if manifest then
             fresh.last_success_at=os.time()
@@ -319,7 +319,7 @@ function Plugin:maybe_auto_check_update(force)
         end
     end)
     if not started then
-        self._auto_update_check_running=false
+        self._miuread_auto_update_check_running=false
         logger.warn("[MiuRead][Updater] passive check not started",tostring(start_err or "unknown"))
     end
     return started

@@ -153,7 +153,7 @@ end
 function Plugin:_finish_thought_popup(generation)
     if generation and generation~=self._thought_popup_generation then return end
     self._thought_popup=nil
-    self._thought_popup_busy=false
+    self._miuread_thought_popup_busy=false
     self:_clear_thought_popup_marker()
     if self.download_task then self.download_task:resume("thought_popup") end
     self:_mark_reader_busy(2)
@@ -167,7 +167,7 @@ function Plugin:_close_active_thought_popup(reason)
     local popup=self._thought_popup
     self._thought_popup_generation=(tonumber(self._thought_popup_generation) or 0)+1
     self._thought_popup=nil
-    self._thought_popup_busy=false
+    self._miuread_thought_popup_busy=false
     self:_clear_thought_popup_marker()
     if self.download_task then self.download_task:resume("thought_popup") end
     if popup and popup~=true then
@@ -252,7 +252,7 @@ function Plugin:_show_thought_href(href)
     -- A disabled comment layer still owns its internal links. Consume them
     -- silently instead of letting KOReader report #miuthought as invalid.
     if not self:_thoughts_enabled() then return true end
-    if self._thought_popup_busy or self._thought_popup then return true end
+    if self._miuread_thought_popup_busy or self._thought_popup then return true end
     local runtime=self._download_runtime
     if runtime and self.download_task and self.download_task:busy() and runtime.comment_slow_notice~=true then
         runtime.comment_slow_notice=true
@@ -260,7 +260,7 @@ function Plugin:_show_thought_href(href)
     end
     self._thought_popup_generation=(tonumber(self._thought_popup_generation) or 0)+1
     local generation=self._thought_popup_generation
-    self._thought_popup_busy=true
+    self._miuread_thought_popup_busy=true
     self:_write_thought_popup_marker("tap",info)
     if self.download_task then self.download_task:pause("thought_popup") end
     self:_mark_reader_busy(30)
